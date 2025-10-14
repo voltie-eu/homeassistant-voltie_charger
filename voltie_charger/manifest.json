@@ -1,0 +1,11 @@
+{
+  "domain": "voltie_charger",
+  "name": "Voltie Charger",
+  "config_flow": true,
+  "documentation": "https://github.com/your_username/ha-ev-charger-resapi",
+  "issue_tracker": "https://github.com/your_username/ha-ev-charger-resapi/issues",
+  "codeowners": ["@your_username"],
+  "requirements": [],
+  "version": "0.1.0",
+  "iot_class": "local_polling"
+}
