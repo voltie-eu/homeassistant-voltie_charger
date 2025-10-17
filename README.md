@@ -16,7 +16,6 @@ A custom integration for [Home Assistant](https://www.home-assistant.io) that le
 > 💡 You must have [HACS](https://hacs.xyz) installed first.
 
 1. Open **HACS** in your Home Assistant sidebar  
-2. Go to **Integrations**  
 3. Click the **⋮ (three dots)** menu in the top-right → **Custom repositories**  
 4. Paste this repository URL: https://github.com/voltie-eu/homeassistant-voltie_charger
 5. Select **Integration** as the category  
