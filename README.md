@@ -1,6 +1,6 @@
-# 🏠 Custom Home Assistant Integration — Voltie Charger
+# 🏠 Home Assistant Integration — Voltie Charger
 
-A custom integration for [Home Assistant](https://www.home-assistant.io) that lets you montitor and control your Voltie Charger.
+An integration for [Home Assistant](https://www.home-assistant.io) that lets you montitor and control your Voltie Charger.
 
 ---
 
