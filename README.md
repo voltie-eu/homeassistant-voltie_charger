@@ -1,14 +1,12 @@
 # Voltie Charger for Home Assistant
 
-Home Assistant integration for Voltie EV chargers. Talks to the charger over your LAN using its local HTTP API.
+Home Assistant integration for Voltie chargers. Talks to the charger over your LAN using its local HTTP API.
 
 [![HACS](https://img.shields.io/badge/HACS-Custom-41BDF5?style=flat-square)](https://hacs.xyz)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.1%2B-41BDF5?style=flat-square&logo=home-assistant&logoColor=white)](https://www.home-assistant.io)
 [![License](https://img.shields.io/badge/license-proprietary-red?style=flat-square)](LICENSE)
 
 The dashboard card is a separate repository: [voltie-eu/lovelace-voltie-charger-card](https://github.com/voltie-eu/lovelace-voltie-charger-card).
-
-![Dashboard example](images/dashboard.png)
 
 ## Features
 
@@ -25,30 +23,35 @@ The dashboard card is a separate repository: [voltie-eu/lovelace-voltie-charger-
 ## Requirements
 
 - Home Assistant 2025.1 or newer.
-- A Voltie Charger with HTTP API enabled. Enable it in the Voltie app under *Settings → Advanced Settings → Experimental → HTTP API config*. Note the username and password if you set them.
+- [HACS](https://www.hacs.xyz/docs/use/download/download/) installed.
+- A Voltie Charger on your LAN with HTTP API enabled in the Voltie mobile app. If you set a username and password, you'll need them during setup.
 
-## Installation
+## Installation 📦
 
 HACS is the recommended way — it handles updates for you.
 
-### HACS (recommended)
+1. Open **HACS** in the sidebar.
+2. Open the **⋮** menu → **Custom repositories**.
+3. Fill in the dialog:
+   - **Repository:** `https://github.com/voltie-eu/homeassistant-voltie_charger`
+   - **Type:** **Integration**
+4. Click **Add**.
+5. Back on the HACS main page, search for `Voltie Charger`.
+6. Click the result and click **Download**.
+7. Confirm the latest version and click **Download** again.
+8. Restart Home Assistant.
 
-1. **HACS → Integrations → ⋮ → Custom repositories**.
-2. Add `https://github.com/voltie-eu/homeassistant-voltie_charger` with category **Integration**.
-3. Install **Voltie Charger** and restart Home Assistant.
+## Setup 🔌
 
-[![Open your Home Assistant instance and add this repo to HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=voltie-eu&repository=homeassistant-voltie_charger&category=integration)
+After the restart, the charger is usually found automatically via mDNS within a minute.
 
-### Manual
+1. Go to **Settings → Devices & services**.
+2. A **Voltie Charger** appears under **Discovered** with the charger's ID.
+3. Click **Add**.
+4. If the charger has credentials set, enter the **Username** and **Password**. Otherwise the form submits directly.
+5. Click **Submit**, then **Finish**.
 
-1. From the [latest release](https://github.com/voltie-eu/homeassistant-voltie_charger/releases), copy `custom_components/voltie_charger/` into your `config/custom_components/` directory.
-2. Restart Home Assistant.
-
-## Setup
-
-After the restart the charger appears under **Settings → Devices & Services** within a minute. Click **Configure** and enter the HTTP API username and password if you set any.
-
-If it doesn't appear (mDNS is often blocked on VLAN-isolated networks), add it manually: **Settings → Devices & Services → Add Integration → Voltie Charger** and enter the charger's IP address.
+If it doesn't appear (mDNS is often blocked on VLAN-isolated networks), add it manually: **Settings → Devices & services → Add integration → Voltie Charger**, then enter the charger's IP address and credentials.
 
 ## Entities
 
@@ -67,7 +70,7 @@ Each charger creates one device with about 40 entities. The main ones:
 
 Per-phase voltage / current / power and DLM / IPM readings are exposed as individual sensors.
 
-## Troubleshooting
+## Troubleshooting 🛠️
 
 **Authentication fails.** The credentials are the ones set inside the charger's HTTP API config, not your Voltie cloud account.
 
