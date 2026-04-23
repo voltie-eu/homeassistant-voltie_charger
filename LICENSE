@@ -1,0 +1,50 @@
+Copyright (c) 2026 Voltie. All rights reserved.
+
+This software and its source code ("the Software") are the proprietary
+property of Voltie. The Software is made available solely for use with
+genuine Voltie Charger devices through Home Assistant.
+
+PERMITTED USES
+
+You may:
+
+  (a) download, install, and run the Software on a Home Assistant instance
+      you personally own or operate, for the purpose of monitoring and
+      controlling a Voltie Charger you own or operate;
+
+  (b) inspect the source code of the Software;
+
+  (c) modify the Software for your own personal, non-commercial use on your
+      own Home Assistant instance.
+
+RESTRICTIONS
+
+Without prior written permission from Voltie, you may NOT:
+
+  (a) redistribute the Software, in whole or in part, in original or
+      modified form, whether free of charge or for a fee;
+
+  (b) publish, host, or make available derivative works of the Software;
+
+  (c) use the Software in connection with any charging hardware not
+      manufactured, sold, or authorized by Voltie;
+
+  (d) use the Software, or any portion of it, as part of a commercial
+      product, paid service, or other revenue-generating offering;
+
+  (e) remove or alter any copyright, trademark, or attribution notices
+      contained in the Software.
+
+NO WARRANTY
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL
+VOLTIE BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+CONTACT
+
+For permissions beyond the scope of this license, contact:
+developer@voltie.eu

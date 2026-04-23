@@ -1,0 +1,133 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "title": "Connect to your Voltie Charger",
+        "description": "Enter the IP address or hostname of your charger on the local network. Username and password are only required if you have enabled HTTP authentication in the mobile app.",
+        "data": {
+          "host": "Host",
+          "username": "Username",
+          "password": "Password"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure Voltie Charger",
+        "description": "Update the connection details for this charger.",
+        "data": {
+          "host": "Host",
+          "username": "Username",
+          "password": "Password"
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "Voltie Charger discovered",
+        "description": "Do you want to add the charger at {host} to Home Assistant?"
+      },
+      "discovery_auth": {
+        "title": "Authenticate with the discovered charger",
+        "description": "The charger at {host} requires a username and password.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
+        }
+      },
+      "api_disabled": {
+        "title": "HTTP API is disabled on this charger",
+        "description": "The charger at **{host}** is visible on your network, but its HTTP API is turned off. Enable it in the Voltie mobile app under **Settings → Advanced Settings → Experimental → HTTP API config**, then press Retry.",
+        "menu_options": {
+          "api_retry": "Retry"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach the charger. Check the host and that the charger is on the network.",
+      "invalid_auth": "The charger rejected the username or password.",
+      "incomplete_credentials": "Provide both a username and a password, or leave both blank for no authentication.",
+      "unknown": "Unexpected error — check the logs for details."
+    },
+    "abort": {
+      "already_configured": "This charger is already configured.",
+      "cannot_connect": "Could not reach the charger at the given address.",
+      "wrong_charger": "The charger at this address has a different ID than the one configured.",
+      "reauth_successful": "Reauthentication successful."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Voltie Charger options",
+        "data": {
+          "scan_interval": "Polling interval (seconds)"
+        },
+        "data_description": {
+          "scan_interval": "How often to query the charger. Lower values update faster but increase load on the charger."
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "car_connected": { "name": "Car connected" },
+      "is_charging": { "name": "Charging" },
+      "dlm_valid": { "name": "DLM data valid" },
+      "ipm_valid": { "name": "IPM data valid" }
+    },
+    "sensor": {
+      "mains_voltage": { "name": "Mains voltage" },
+      "phases": {
+        "name": "Phases in use",
+        "state": {
+          "1": "Single-phase",
+          "3": "Three-phase"
+        }
+      },
+      "current_offered": { "name": "Offered current" },
+      "charge_current": { "name": "Charge current" },
+      "charge_power": { "name": "Charge power" },
+      "evse_state": {
+        "name": "EVSE state",
+        "state": {
+          "unknown": "Unknown",
+          "ev_not_connected": "No vehicle connected",
+          "ev_connected_not_charging": "Vehicle connected",
+          "ev_connected_charging": "Charging",
+          "diode_check_failed": "Diode check failed",
+          "gfci_fault": "GFCI fault",
+          "no_ground": "No ground detected",
+          "stuck_relay": "Stuck relay",
+          "gfi_self_test_failure": "GFI self-test failure",
+          "over_temperature": "Over-temperature",
+          "over_current": "Over-current",
+          "i2c_bus_error": "Internal bus error",
+          "ev_fault": "Vehicle fault",
+          "over_humidity": "Over-humidity",
+          "phase_misconnected": "Phase misconnected",
+          "overvoltage": "Over-voltage",
+          "undervoltage": "Under-voltage",
+          "error": "Error"
+        }
+      },
+      "session_energy": { "name": "Session energy" },
+      "session_charge_time": { "name": "Session charge time" },
+      "session_idle_time": { "name": "Session idle time" },
+      "average_power": { "name": "Average power" },
+      "voltage_phase": { "name": "Voltage L{phase}" },
+      "current_phase": { "name": "Current L{phase}" },
+      "power_phase": { "name": "Power L{phase}" },
+      "dlm_current_phase": { "name": "DLM current L{phase}" },
+      "ipm_current_phase": { "name": "IPM current L{phase}" }
+    },
+    "switch": {
+      "charging": { "name": "Charging enabled" },
+      "autostart": { "name": "Autostart on plug-in" },
+      "display": { "name": "Display" },
+      "front_led": { "name": "Front LED" },
+      "rear_led": { "name": "Rear LED" },
+      "buzzer": { "name": "Buzzer" }
+    },
+    "number": {
+      "current_limit": { "name": "Maximum charging current" }
+    }
+  }
+}

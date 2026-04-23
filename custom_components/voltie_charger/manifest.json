@@ -1,11 +1,19 @@
 {
   "domain": "voltie_charger",
   "name": "Voltie Charger",
-  "config_flow": true,
-  "documentation": "https://github.com/voltie-eu/homeassistant-voltie_charger",
-  "issue_tracker": "https://github.com/voltie-eu/homeassistant-voltie_charger",
   "codeowners": ["@voltie-eu"],
+  "config_flow": true,
+  "dependencies": ["zeroconf"],
+  "documentation": "https://github.com/voltie-eu/homeassistant-voltie_charger",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/voltie-eu/homeassistant-voltie_charger/issues",
+  "quality_scale": "bronze",
   "requirements": [],
-  "version": "0.1.0",
-  "iot_class": "local_polling"
+  "version": "0.2.0",
+  "zeroconf": [
+    {
+      "type": "_voltie-info._tcp.local."
+    }
+  ]
 }
