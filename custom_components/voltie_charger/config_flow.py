@@ -12,7 +12,7 @@ from homeassistant.config_entries import (
     ConfigFlowResult,
     OptionsFlow,
 )
-from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME
+from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, CONF_USERNAME
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import homeassistant.helpers.config_validation as cv
@@ -24,6 +24,7 @@ from .client import (
     VoltieChargerConnectionError,
 )
 from .const import (
+    API_PORT,
     CONF_SCAN_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
@@ -33,9 +34,12 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+_PORT_SELECTOR = vol.All(vol.Coerce(int), vol.Range(min=1, max=65535))
+
 STEP_USER_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_HOST): cv.string,
+        vol.Optional(CONF_PORT, default=API_PORT): _PORT_SELECTOR,
         vol.Optional(CONF_USERNAME, default=""): cv.string,
         vol.Optional(CONF_PASSWORD, default=""): cv.string,
     }
@@ -59,6 +63,7 @@ async def _validate(
         data[CONF_HOST],
         username or None,
         password or None,
+        port=data.get(CONF_PORT) or API_PORT,
     )
     try:
         status = await client.async_get_status()
@@ -170,6 +175,9 @@ class VoltieChargerConfigFlow(ConfigFlow, domain=DOMAIN):
         schema = vol.Schema(
             {
                 vol.Required(CONF_HOST, default=defaults.get(CONF_HOST, "")): cv.string,
+                vol.Optional(
+                    CONF_PORT, default=defaults.get(CONF_PORT, API_PORT)
+                ): _PORT_SELECTOR,
                 vol.Optional(
                     CONF_USERNAME, default=defaults.get(CONF_USERNAME, "")
                 ): cv.string,

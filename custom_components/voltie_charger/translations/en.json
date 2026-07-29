@@ -7,8 +7,12 @@
         "description": "Enter the IP address or hostname of your charger on the local network. Username and password are only required if you have enabled HTTP authentication in the mobile app.",
         "data": {
           "host": "Host",
+          "port": "Port",
           "username": "Username",
           "password": "Password"
+        },
+        "data_description": {
+          "port": "HTTP API port of the charger. Leave at 5059 unless you changed it."
         }
       },
       "reconfigure": {
@@ -16,8 +20,12 @@
         "description": "Update the connection details for this charger.",
         "data": {
           "host": "Host",
+          "port": "Port",
           "username": "Username",
           "password": "Password"
+        },
+        "data_description": {
+          "port": "HTTP API port of the charger. Leave at 5059 unless you changed it."
         }
       },
       "zeroconf_confirm": {
@@ -37,6 +45,14 @@
         "description": "The charger at **{host}** is visible on your network, but its HTTP API is turned off. Enable it in the Voltie mobile app under **Settings → Advanced Settings → Experimental → HTTP API config**, then press Retry.",
         "menu_options": {
           "api_retry": "Retry"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate with the charger",
+        "description": "Enter the updated credentials for the charger at {host}.",
+        "data": {
+          "username": "Username",
+          "password": "Password"
         }
       }
     },
@@ -68,23 +84,54 @@
   },
   "entity": {
     "binary_sensor": {
-      "car_connected": { "name": "Car connected" },
-      "is_charging": { "name": "Charging" },
-      "dlm_valid": { "name": "DLM data valid" },
-      "ipm_valid": { "name": "IPM data valid" }
+      "car_connected": {
+        "name": "Car connected"
+      },
+      "is_charging": {
+        "name": "Charging"
+      },
+      "dlm_valid": {
+        "name": "DLM data valid"
+      },
+      "ipm_valid": {
+        "name": "IPM data valid"
+      },
+      "rfid_reader_enabled": {
+        "name": "RFID reader enabled"
+      },
+      "rfid_reader_working": {
+        "name": "RFID reader working"
+      },
+      "rfid_learn_in_progress": {
+        "name": "RFID learn mode"
+      }
     },
     "sensor": {
-      "mains_voltage": { "name": "Mains voltage" },
+      "mains_voltage": {
+        "name": "Mains voltage"
+      },
       "phases": {
-        "name": "Phases in use",
+        "name": "Phases wired",
         "state": {
           "1": "Single-phase",
           "3": "Three-phase"
         }
       },
-      "current_offered": { "name": "Offered current" },
-      "charge_current": { "name": "Charge current" },
-      "charge_power": { "name": "Charge power" },
+      "phases_used": {
+        "name": "Active phases"
+      },
+      "current_hw_limit": {
+        "name": "Hardware current limit"
+      },
+      "current_offered": {
+        "name": "Offered current"
+      },
+      "charge_current": {
+        "name": "Charge current"
+      },
+      "charge_power": {
+        "name": "Charge power"
+      },
       "evse_state": {
         "name": "EVSE state",
         "state": {
@@ -92,6 +139,7 @@
           "ev_not_connected": "No vehicle connected",
           "ev_connected_not_charging": "Vehicle connected",
           "ev_connected_charging": "Charging",
+          "ev_connected_charging_ventilation": "Charging (ventilation)",
           "diode_check_failed": "Diode check failed",
           "gfci_fault": "GFCI fault",
           "no_ground": "No ground detected",
@@ -108,26 +156,267 @@
           "error": "Error"
         }
       },
-      "session_energy": { "name": "Session energy" },
-      "session_charge_time": { "name": "Session charge time" },
-      "session_idle_time": { "name": "Session idle time" },
-      "average_power": { "name": "Average power" },
-      "voltage_phase": { "name": "Voltage L{phase}" },
-      "current_phase": { "name": "Current L{phase}" },
-      "power_phase": { "name": "Power L{phase}" },
-      "dlm_current_phase": { "name": "DLM current L{phase}" },
-      "ipm_current_phase": { "name": "IPM current L{phase}" }
+      "session_energy": {
+        "name": "Session energy"
+      },
+      "session_charge_time": {
+        "name": "Session charge time"
+      },
+      "session_idle_time": {
+        "name": "Session idle time"
+      },
+      "average_power": {
+        "name": "Average power"
+      },
+      "voltage_phase": {
+        "name": "Voltage L{phase}"
+      },
+      "current_phase": {
+        "name": "Current L{phase}"
+      },
+      "power_phase": {
+        "name": "Power L{phase}"
+      },
+      "dlm_current_phase": {
+        "name": "DLM current L{phase}"
+      },
+      "ipm_current_phase": {
+        "name": "IPM current L{phase}"
+      },
+      "api_version": {
+        "name": "API version"
+      },
+      "rfid_list_count": {
+        "name": "RFID tags stored"
+      },
+      "rfid_list_capacity": {
+        "name": "RFID tag capacity"
+      },
+      "rfid_learn_remaining": {
+        "name": "RFID learn time remaining"
+      },
+      "rfid_list_format_ver": {
+        "name": "RFID list format version"
+      },
+      "rfid_list_hash": {
+        "name": "RFID list hash"
+      }
     },
     "switch": {
-      "charging": { "name": "Charging enabled" },
-      "autostart": { "name": "Autostart on plug-in" },
-      "display": { "name": "Display" },
-      "front_led": { "name": "Front LED" },
-      "rear_led": { "name": "Rear LED" },
-      "buzzer": { "name": "Buzzer" }
+      "charging": {
+        "name": "Charging enabled"
+      },
+      "autostart": {
+        "name": "Autostart on plug-in"
+      },
+      "display": {
+        "name": "Display"
+      },
+      "front_led": {
+        "name": "Front LED"
+      },
+      "rear_led": {
+        "name": "Rear LED"
+      },
+      "buzzer": {
+        "name": "Buzzer"
+      },
+      "out_of_service": {
+        "name": "Out of service"
+      },
+      "force_single_phase": {
+        "name": "Force single-phase charging"
+      }
+    },
+    "select": {
+      "dlm_mode": {
+        "name": "Load management mode",
+        "state": {
+          "off": "Off",
+          "dynamic": "Dynamic",
+          "eco": "Eco",
+          "green": "Green",
+          "grid_control": "Grid control"
+        }
+      },
+      "access_mode": {
+        "name": "Access mode",
+        "state": {
+          "home_charger": "Home charger",
+          "home_charger_rfid": "Home charger + RFID"
+        }
+      }
     },
     "number": {
-      "current_limit": { "name": "Maximum charging current" }
+      "current_limit": {
+        "name": "Maximum charging current"
+      },
+      "dlm_current_limit": {
+        "name": "Building current limit"
+      },
+      "dlm_eco_startcurr": {
+        "name": "Eco mode start current"
+      },
+      "grid_u_stop": {
+        "name": "Grid control stop voltage"
+      },
+      "grid_u_min": {
+        "name": "Grid control minimum voltage"
+      },
+      "grid_u_max": {
+        "name": "Grid control maximum voltage"
+      },
+      "grid_t_up": {
+        "name": "Grid control increase delay"
+      },
+      "grid_t_dn": {
+        "name": "Grid control decrease delay"
+      }
+    },
+    "button": {
+      "reboot": {
+        "name": "Reboot charger"
+      },
+      "rfid_learn": {
+        "name": "Start RFID learn mode"
+      },
+      "rfid_learn_cancel": {
+        "name": "Cancel RFID learn mode"
+      }
+    }
+  },
+  "services": {
+    "display_text": {
+      "name": "Display text",
+      "description": "Scrolls a text message across the charger's display.",
+      "fields": {
+        "message": {
+          "name": "Message",
+          "description": "Text to scroll across the display (1-100 characters)."
+        },
+        "repeat_count": {
+          "name": "Repeat count",
+          "description": "How many times the message scrolls across the display. Defaults to once."
+        },
+        "clear_first": {
+          "name": "Clear first",
+          "description": "Show this message immediately, cancelling any active and queued messages."
+        }
+      }
+    },
+    "set_rear_led": {
+      "name": "Set rear LED",
+      "description": "Sets the rear LED colour and brightness for a period, after which it reverts to its default colour.",
+      "fields": {
+        "brightness": {
+          "name": "Brightness",
+          "description": "LED intensity from 0.0 to 1.0. Zero turns the LED off."
+        },
+        "color_rgb": {
+          "name": "Colour",
+          "description": "RGB colour as a hex value, for example #FF8800. Sets the channel ratios; overall intensity comes from the brightness."
+        },
+        "duration_sec": {
+          "name": "Duration",
+          "description": "Seconds before the LED reverts to its default colour. Defaults to 3600, which is also the maximum; zero is treated by the charger as the maximum, so use a brightness of 0 to turn the LED off instead."
+        }
+      }
+    },
+    "start_charging": {
+      "name": "Start charging",
+      "description": "Starts a charging session, optionally recording an RFID tag and name in the charging record.",
+      "fields": {
+        "id_tag": {
+          "name": "RFID tag ID",
+          "description": "RFID tag ID to record against the session (8-20 characters)."
+        },
+        "name": {
+          "name": "Name",
+          "description": "Name to record against the session (up to 30 characters)."
+        }
+      }
+    },
+    "add_rfid_tag": {
+      "name": "Add RFID tag",
+      "description": "Adds a new RFID tag to the charger's stored tag list. Requires API v5 firmware.",
+      "fields": {
+        "id": {
+          "name": "Tag ID",
+          "description": "RFID tag ID as a hexadecimal value, 8 to 20 characters (0-9, A-F)."
+        },
+        "name": {
+          "name": "Name",
+          "description": "Friendly name for the tag (up to 30 characters)."
+        },
+        "enabled": {
+          "name": "Enabled",
+          "description": "Whether the tag may be used to start charging. Defaults to enabled."
+        },
+        "comment": {
+          "name": "Comment",
+          "description": "Free-text comment (up to 40 characters)."
+        }
+      }
+    },
+    "modify_rfid_tag": {
+      "name": "Modify RFID tag",
+      "description": "Changes an existing RFID tag. The tag ID identifies the tag and cannot be changed. Requires API v5 firmware.",
+      "fields": {
+        "id": {
+          "name": "Tag ID",
+          "description": "Hexadecimal ID of the existing tag to modify."
+        },
+        "name": {
+          "name": "Name",
+          "description": "New friendly name (up to 30 characters)."
+        },
+        "enabled": {
+          "name": "Enabled",
+          "description": "Whether the tag may be used to start charging."
+        },
+        "comment": {
+          "name": "Comment",
+          "description": "New free-text comment (up to 40 characters)."
+        }
+      }
+    },
+    "delete_rfid_tag": {
+      "name": "Delete RFID tag",
+      "description": "Removes an RFID tag from the charger's stored tag list. Requires API v5 firmware.",
+      "fields": {
+        "id": {
+          "name": "Tag ID",
+          "description": "Hexadecimal ID of the tag to delete."
+        }
+      }
+    },
+    "start_rfid_learn": {
+      "name": "Start RFID learn mode",
+      "description": "Puts the charger into RFID learn mode so presented tags are added to its stored list. Requires API v5 firmware.",
+      "fields": {
+        "timeout_sec": {
+          "name": "Timeout",
+          "description": "Seconds to stay in learn mode. Defaults to 30."
+        },
+        "count_max": {
+          "name": "Maximum tags",
+          "description": "Stop after learning this many tags. Zero learns without a limit."
+        }
+      }
+    },
+    "list_rfid_tags": {
+      "name": "List RFID tags",
+      "description": "Returns the RFID tags stored on the charger. Requires API v5 firmware.",
+      "fields": {
+        "first_item": {
+          "name": "First item",
+          "description": "Index of the first tag to return, for paging through a long list."
+        },
+        "max_count": {
+          "name": "Maximum count",
+          "description": "Maximum number of tags to return. Zero returns all of them."
+        }
+      }
     }
   }
 }

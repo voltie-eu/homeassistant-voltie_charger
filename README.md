@@ -8,6 +8,8 @@ Home Assistant integration for Voltie chargers. Talks to the charger over your L
 
 The dashboard card is a separate repository: [voltie-eu/lovelace-voltie-charger-card](https://github.com/voltie-eu/lovelace-voltie-charger-card).
 
+Built against **HTTP API v5.0**. Features the charger's firmware doesn't provide are hidden or reported unavailable rather than failing, so older firmware keeps working.
+
 ## Features
 
 - Per-phase voltage, current and power sensors.
@@ -15,8 +17,11 @@ The dashboard card is a separate repository: [voltie-eu/lovelace-voltie-charger-
 - EVSE state sensor.
 - DLM and IPM meter readings.
 - Binary sensors for car connected and charging in progress.
-- Switches for start/stop, autostart, display, LEDs, buzzer.
-- Number entity for the maximum charging current.
+- Switches for start/stop, autostart, display, LEDs, buzzer, out of service and forced single-phase charging.
+- Number entities for the charging current limit and the load-management and grid-control parameters.
+- Selects for the load-management mode and access mode.
+- Buttons to reboot the charger and to run RFID learn mode.
+- Services for the display, the rear LED and RFID tag management.
 - Diagnostics download with credentials redacted.
 - mDNS auto-discovery.
 
@@ -55,7 +60,7 @@ If it doesn't appear (mDNS is often blocked on VLAN-isolated networks), add it m
 
 ## Entities
 
-Each charger creates one device with about 40 entities. The main ones:
+Each charger creates one device with about 60 entities. The main ones:
 
 | Entity | Purpose |
 | --- | --- |
@@ -63,12 +68,56 @@ Each charger creates one device with about 40 entities. The main ones:
 | `sensor.<name>_session_energy` | Session energy (kWh). |
 | `sensor.<name>_session_charge_time` | Session charge time. |
 | `sensor.<name>_evse_state` | EVSE state. |
+| `sensor.<name>_active_phases` | Phases used by the current session. |
+| `sensor.<name>_phases_wired` | Phases wired into the charger. |
+| `sensor.<name>_hardware_current_limit` | Highest current the hardware supports (A). |
 | `binary_sensor.<name>_car_connected` | Plug detection. |
 | `binary_sensor.<name>_charging` | Charging in progress. |
-| `switch.<name>_charging` | Start / stop. |
-| `number.<name>_current_limit` | Maximum charging current (A). |
+| `switch.<name>_charging_enabled` | Start / stop. |
+| `switch.<name>_out_of_service` | Take the charger out of service. |
+| `switch.<name>_force_single_phase_charging` | Force single-phase charging. |
+| `number.<name>_maximum_charging_current` | Charging current limit (A). |
+| `select.<name>_load_management_mode` | Off / dynamic / eco / green / grid control. |
+| `select.<name>_access_mode` | Home charger, with or without RFID. |
+| `button.<name>_reboot_charger` | Reboot the charger. |
 
-Per-phase voltage / current / power and DLM / IPM readings are exposed as individual sensors.
+Per-phase voltage / current / power, DLM / IPM readings, the grid-control parameters and the RFID reader status are exposed as individual entities. Some diagnostic entities are disabled by default — enable them from the device page.
+
+`number.<name>_maximum_charging_current` takes its upper bound from the charger's own `current_hw_limit`, capped at the 32 A the API accepts.
+
+## Actions
+
+| Action | Purpose |
+| --- | --- |
+| `voltie_charger.display_text` | Scroll a message across the charger's display. |
+| `voltie_charger.set_rear_led` | Set the rear LED colour and brightness for a period. |
+| `voltie_charger.start_charging` | Start a session, optionally recording an RFID tag. |
+| `voltie_charger.add_rfid_tag` | Add a tag to the charger's stored list. |
+| `voltie_charger.modify_rfid_tag` | Change a stored tag's name, comment or enabled flag. |
+| `voltie_charger.delete_rfid_tag` | Remove a stored tag. |
+| `voltie_charger.list_rfid_tags` | Return the stored tags as action response data. |
+| `voltie_charger.start_rfid_learn` | Start learn mode with a timeout and tag count. |
+
+Each action targets one charger device. The RFID actions require API v5 firmware.
+
+**RFID tag IDs must be hexadecimal** (0-9, A-F), 8 to 20 characters. The API documentation describes a wider character set, but the firmware rejects anything else, so these actions validate it up front rather than letting the charger return a generic error.
+
+## Upgrading from v0.2.x
+
+Existing entities keep their entity IDs, so dashboards and automations continue to work. Two cosmetic details are worth knowing:
+
+- The `phases` sensor was renamed to **Phases wired**, because the API clarified that the field means phases wired into the charger rather than phases in use. On an upgraded install it keeps its original `..._phases_in_use` entity ID, so that ID no longer matches its name. The new session-phase sensor is **Active phases**.
+- New entities may pick up an area prefix in their entity ID (for example `sensor.garage_voltie_charger_1234_active_phases`) while pre-existing ones do not, because Home Assistant derives IDs from the device's area at creation time. Removing and re-adding the integration gives a consistent set, at the cost of losing entity history.
+
+## Firmware compatibility
+
+The integration adapts to what the charger reports:
+
+- Configuration entities whose `/config` key is missing read as unavailable.
+- RFID entities are only created when the charger answers `GET /rfid/status`. After a firmware upgrade, reload the integration to pick them up.
+- `/extras` commands that the firmware rejects as unknown produce an error telling you to update the charger.
+
+`sensor.<name>_api_version` reports the charger's major API version, which is useful in support tickets.
 
 ## Troubleshooting 🛠️
 
@@ -77,6 +126,17 @@ Per-phase voltage / current / power and DLM / IPM readings are exposed as indivi
 **Charger not discovered.** Confirm the HTTP API is enabled. Add the charger manually by IP if your network blocks mDNS.
 
 **Entities go `unavailable`.** The integration retries with backoff. If it persists, check the charger is powered and on the network.
+
+**RFID entities are missing.** They need API v5 firmware. Check `sensor.<name>_api_version`, then reload the integration after updating the charger.
+
+**"Not master" errors on RFID actions.** The charger is a secondary unit in a prepaid-RFID cluster — send the action to the master unit instead.
+
+## Development
+
+```bash
+pip install -r requirements_test.txt
+pytest
+```
 
 ## License
 

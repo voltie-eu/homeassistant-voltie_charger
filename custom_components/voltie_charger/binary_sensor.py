@@ -14,9 +14,9 @@ from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import VoltieChargerConfigEntry
-from .const import DATA_POWER, DATA_STATUS
-from .entity import VoltieChargerEntity
+from . import VoltieChargerConfigEntry, VoltieChargerCoordinator
+from .const import DATA_POWER, DATA_RFID_STATUS, DATA_STATUS
+from .entity import VoltieChargerEntity, VoltieChargerRfidEntity
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -29,7 +29,12 @@ def _status(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _power_stat(data: dict[str, Any]) -> dict[str, Any]:
-    return (data.get(DATA_POWER, {}) or {}).get("power_stat", {}) or {}
+    stat = (data.get(DATA_POWER) or {}).get("power_stat")
+    return stat if isinstance(stat, dict) else {}
+
+
+def _rfid_status(data: dict[str, Any]) -> dict[str, Any]:
+    return data.get(DATA_RFID_STATUS, {}) or {}
 
 
 BINARY_SENSORS: tuple[VoltieBinarySensorDescription, ...] = (
@@ -61,6 +66,30 @@ BINARY_SENSORS: tuple[VoltieBinarySensorDescription, ...] = (
     ),
 )
 
+RFID_BINARY_SENSORS: tuple[VoltieBinarySensorDescription, ...] = (
+    VoltieBinarySensorDescription(
+        key="rfid_reader_enabled",
+        translation_key="rfid_reader_enabled",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda d: _rfid_status(d).get("reader_enabled"),
+    ),
+    VoltieBinarySensorDescription(
+        key="rfid_reader_working",
+        translation_key="rfid_reader_working",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        # No CONNECTIVITY device class: it renders as "Connected/Disconnected",
+        # which misdescribes a reader that is present but out of service.
+        value_fn=lambda d: _rfid_status(d).get("reader_working"),
+    ),
+    VoltieBinarySensorDescription(
+        key="rfid_learn_in_progress",
+        translation_key="rfid_learn_in_progress",
+        device_class=BinarySensorDeviceClass.RUNNING,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda d: _rfid_status(d).get("learn_in_progress"),
+    ),
+)
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -69,15 +98,40 @@ async def async_setup_entry(
 ) -> None:
     """Set up Voltie Charger binary sensors."""
     coordinator = entry.runtime_data
-    async_add_entities(
+    entities: list[BinarySensorEntity] = [
         VoltieChargerBinarySensor(coordinator, desc) for desc in BINARY_SENSORS
-    )
+    ]
+    if coordinator.rfid_supported:
+        entities.extend(
+            VoltieChargerRfidBinarySensor(coordinator, desc)
+            for desc in RFID_BINARY_SENSORS
+        )
+    async_add_entities(entities)
 
 
 class VoltieChargerBinarySensor(VoltieChargerEntity, BinarySensorEntity):
     entity_description: VoltieBinarySensorDescription
 
     def __init__(self, coordinator, description: VoltieBinarySensorDescription) -> None:
+        super().__init__(coordinator, description.key)
+        self.entity_description = description
+
+    @property
+    def is_on(self) -> bool | None:
+        value = self.entity_description.value_fn(self.coordinator.data or {})
+        return bool(value) if value is not None else None
+
+
+class VoltieChargerRfidBinarySensor(VoltieChargerRfidEntity, BinarySensorEntity):
+    """RFID reader diagnostic backed by /rfid/status."""
+
+    entity_description: VoltieBinarySensorDescription
+
+    def __init__(
+        self,
+        coordinator: VoltieChargerCoordinator,
+        description: VoltieBinarySensorDescription,
+    ) -> None:
         super().__init__(coordinator, description.key)
         self.entity_description = description
 

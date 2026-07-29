@@ -1,0 +1,5 @@
+# Test-only dependencies. The integration itself has no runtime requirements.
+# pytest-homeassistant-custom-component pins the Home Assistant version it
+# tests against, so bumping it is how you move to a newer HA baseline.
+pytest-homeassistant-custom-component==0.13.316
+aioresponses==0.7.9

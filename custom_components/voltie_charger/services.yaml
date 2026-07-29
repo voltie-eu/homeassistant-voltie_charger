@@ -1,0 +1,138 @@
+display_text:
+  target:
+    device:
+      integration: voltie_charger
+  fields:
+    message:
+      required: true
+      selector:
+        text:
+    repeat_count:
+      selector:
+        number:
+          min: 1
+          max: 5
+          mode: box
+    clear_first:
+      selector:
+        boolean:
+
+set_rear_led:
+  target:
+    device:
+      integration: voltie_charger
+  fields:
+    brightness:
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 1
+          step: 0.01
+          mode: slider
+    color_rgb:
+      required: true
+      example: "#FF8800"
+      selector:
+        text:
+    duration_sec:
+      selector:
+        number:
+          min: 0
+          max: 3600
+          unit_of_measurement: s
+          mode: box
+
+start_charging:
+  target:
+    device:
+      integration: voltie_charger
+  fields:
+    id_tag:
+      selector:
+        text:
+    name:
+      selector:
+        text:
+
+add_rfid_tag:
+  target:
+    device:
+      integration: voltie_charger
+  fields:
+    id:
+      required: true
+      selector:
+        text:
+    name:
+      selector:
+        text:
+    enabled:
+      selector:
+        boolean:
+    comment:
+      selector:
+        text:
+
+modify_rfid_tag:
+  target:
+    device:
+      integration: voltie_charger
+  fields:
+    id:
+      required: true
+      selector:
+        text:
+    name:
+      selector:
+        text:
+    enabled:
+      selector:
+        boolean:
+    comment:
+      selector:
+        text:
+
+delete_rfid_tag:
+  target:
+    device:
+      integration: voltie_charger
+  fields:
+    id:
+      required: true
+      selector:
+        text:
+
+start_rfid_learn:
+  target:
+    device:
+      integration: voltie_charger
+  fields:
+    timeout_sec:
+      selector:
+        number:
+          min: 1
+          max: 3600
+          unit_of_measurement: s
+          mode: box
+    count_max:
+      selector:
+        number:
+          min: 0
+          mode: box
+
+list_rfid_tags:
+  target:
+    device:
+      integration: voltie_charger
+  fields:
+    first_item:
+      selector:
+        number:
+          min: 0
+          mode: box
+    max_count:
+      selector:
+        number:
+          min: 0
+          mode: box

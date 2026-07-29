@@ -22,9 +22,15 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from . import VoltieChargerConfigEntry
-from .const import DATA_POWER, DATA_STATUS, EVSE_STATE_ERROR, EVSE_STATES
-from .entity import VoltieChargerEntity
+from . import VoltieChargerConfigEntry, VoltieChargerCoordinator
+from .const import (
+    DATA_POWER,
+    DATA_RFID_STATUS,
+    DATA_STATUS,
+    EVSE_STATE_ERROR,
+    EVSE_STATES,
+)
+from .entity import VoltieChargerEntity, VoltieChargerRfidEntity
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -45,12 +51,38 @@ def _cdr(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _power_stat(data: dict[str, Any]) -> dict[str, Any]:
-    return (data.get(DATA_POWER, {}) or {}).get("power_stat", {}) or {}
+    stat = (data.get(DATA_POWER) or {}).get("power_stat")
+    return stat if isinstance(stat, dict) else {}
+
+
+def _rfid(data: dict[str, Any]) -> dict[str, Any]:
+    return data.get(DATA_RFID_STATUS, {}) or {}
+
+
+def _numeric(value: Any) -> int | float | None:
+    """Return the value only if HA can put it in a numeric state.
+
+    Anything else — a string, a dict, or a bool, which is an int in Python but
+    renders as "True" — would raise inside SensorEntity.state on a sensor with a
+    device_class or state_class. That exception propagates out of the
+    coordinator's listener dispatch and stops every entity after it updating, so
+    one bad field would freeze half the device.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return value
 
 
 def _phases_value(data: dict[str, Any]) -> str | None:
     value = _status(data).get("phases")
-    return str(value) if value in (1, 3) else None
+    # Compared as an int, not by membership: `3.0 in (1, 3)` and `True in (1, 3)`
+    # are both true, and str() would then yield "3.0"/"True", which are not in
+    # this ENUM's options.
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if value != int(value) or int(value) not in (1, 3):
+        return None
+    return str(int(value))
 
 
 def _evse_state(data: dict[str, Any]) -> str:
@@ -58,6 +90,9 @@ def _evse_state(data: dict[str, Any]) -> str:
     raw = _status(data).get("evse_state")
     if raw is None:
         return EVSE_STATES[0]
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        # An unhashable or non-integer code would raise in dict.get().
+        return EVSE_STATE_ERROR
     return EVSE_STATES.get(raw, EVSE_STATE_ERROR)
 
 
@@ -79,12 +114,34 @@ SENSORS: tuple[VoltieSensorDescription, ...] = (
         value_fn=_phases_value,
     ),
     VoltieSensorDescription(
+        key="phases_used",
+        translation_key="phases_used",
+        # Phases in the *current session* (0 when idle). Kept a plain numeric
+        # sensor rather than an enum like "phases": the spec does not enumerate
+        # the possible values, and an ENUM sensor logs an error for anything
+        # outside options. No state_class — averaging a 0/1/3 phase count over
+        # an hour is not a meaningful statistic.
+        value_fn=lambda d: _numeric(_status(d).get("phases_used")),
+    ),
+    VoltieSensorDescription(
         key="current_offered",
         translation_key="current_offered",
         device_class=SensorDeviceClass.CURRENT,
         native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda d: _status(d).get("current_offered"),
+    ),
+    VoltieSensorDescription(
+        key="current_hw_limit",
+        translation_key="current_hw_limit",
+        device_class=SensorDeviceClass.CURRENT,
+        native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
+        # A fixed hardware capability rather than a live reading: diagnostic,
+        # and no state_class, since recording hourly statistics for a constant
+        # only costs database space.
+        entity_category=EntityCategory.DIAGNOSTIC,
+        suggested_display_precision=0,
+        value_fn=lambda d: _numeric(_status(d).get("current_hw_limit")),
     ),
     VoltieSensorDescription(
         key="charge_current",
@@ -152,6 +209,49 @@ SENSORS: tuple[VoltieSensorDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=2,
         value_fn=lambda d: _cdr(d).get("avg_power"),
+    ),
+)
+
+
+RFID_SENSORS: tuple[VoltieSensorDescription, ...] = (
+    VoltieSensorDescription(
+        key="rfid_list_count",
+        translation_key="rfid_list_count",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_fn=lambda d: _numeric(_rfid(d).get("list_count")),
+    ),
+    VoltieSensorDescription(
+        key="rfid_list_capacity",
+        translation_key="rfid_list_capacity",
+        # Constant for a given firmware, so no state_class.
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda d: _numeric(_rfid(d).get("list_capacity")),
+    ),
+    VoltieSensorDescription(
+        key="rfid_learn_remaining",
+        translation_key="rfid_learn_remaining",
+        device_class=SensorDeviceClass.DURATION,
+        native_unit_of_measurement=UnitOfTime.SECONDS,
+        entity_category=EntityCategory.DIAGNOSTIC,
+        value_fn=lambda d: _numeric(_rfid(d).get("learn_to_sec")),
+    ),
+    VoltieSensorDescription(
+        key="rfid_list_format_ver",
+        translation_key="rfid_list_format_ver",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_fn=lambda d: _numeric(_rfid(d).get("list_format_ver")),
+    ),
+    VoltieSensorDescription(
+        key="rfid_list_hash",
+        translation_key="rfid_list_hash",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        # 8 hex digits, not a number — a device_class or state_class here would
+        # make the recorder try to coerce it.
+        value_fn=lambda d: _rfid(d).get("list_hash"),
     ),
 )
 
@@ -230,10 +330,19 @@ async def async_setup_entry(
 ) -> None:
     """Set up Voltie Charger sensors."""
     coordinator = entry.runtime_data
-    async_add_entities(
+    entities: list[SensorEntity] = [
         VoltieChargerSensor(coordinator, description)
         for description in (*SENSORS, *PER_PHASE_SENSORS)
-    )
+    ]
+    entities.append(VoltieChargerApiVersionSensor(coordinator))
+    # Skipped entirely on pre-v5 firmware so old chargers don't get a row of
+    # permanently unavailable entities.
+    if coordinator.rfid_supported:
+        entities.extend(
+            VoltieChargerRfidSensor(coordinator, description)
+            for description in RFID_SENSORS
+        )
+    async_add_entities(entities)
 
 
 class VoltieChargerSensor(VoltieChargerEntity, SensorEntity):
@@ -259,3 +368,46 @@ class VoltieChargerSensor(VoltieChargerEntity, SensorEntity):
         if fn is None:
             return None
         return fn(self.coordinator.data or {})
+
+
+class VoltieChargerRfidSensor(VoltieChargerRfidEntity, SensorEntity):
+    """A sensor backed by /rfid/status, which only exists on API v5 firmware."""
+
+    entity_description: VoltieSensorDescription
+
+    def __init__(
+        self,
+        coordinator: VoltieChargerCoordinator,
+        description: VoltieSensorDescription,
+    ) -> None:
+        super().__init__(coordinator, description.key)
+        self.entity_description = description
+
+    @property
+    def native_value(self) -> Any:
+        return self.entity_description.value_fn(self.coordinator.data or {})
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        fn = self.entity_description.attributes_fn
+        if fn is None:
+            return None
+        return fn(self.coordinator.data or {})
+
+
+class VoltieChargerApiVersionSensor(VoltieChargerEntity, SensorEntity):
+    """The charger's major API version.
+
+    Needs its own class rather than a description: /apiver is probed once during
+    setup and lives on the coordinator, not in its polled data.
+    """
+
+    _attr_translation_key = "api_version"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, coordinator: VoltieChargerCoordinator) -> None:
+        super().__init__(coordinator, "api_version")
+
+    @property
+    def native_value(self) -> int | None:
+        return self.coordinator.api_version
