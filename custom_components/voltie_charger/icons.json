@@ -28,6 +28,9 @@
       "session_energy": {
         "default": "mdi:battery-charging"
       },
+      "total_energy": {
+        "default": "mdi:counter"
+      },
       "session_charge_time": {
         "default": "mdi:timer-outline"
       },
@@ -132,6 +135,12 @@
       }
     },
     "binary_sensor": {
+      "problem": {
+        "default": "mdi:check-circle-outline",
+        "state": {
+          "on": "mdi:alert-circle"
+        }
+      },
       "dlm_valid": {
         "default": "mdi:check-network-outline"
       },
@@ -157,6 +166,11 @@
       },
       "rfid_learn_cancel": {
         "default": "mdi:card-remove-outline"
+      }
+    },
+    "event": {
+      "charging_session": {
+        "default": "mdi:ev-station"
       }
     }
   },

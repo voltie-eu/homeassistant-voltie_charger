@@ -29,6 +29,7 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     MAX_SCAN_INTERVAL,
+    MDNS_NAME_RE,
     MIN_SCAN_INTERVAL,
 )
 
@@ -84,7 +85,8 @@ async def _validate(
 class VoltieChargerConfigFlow(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Voltie Charger."""
 
-    VERSION = 1
+    # 2: entity unique IDs keyed by charger ID instead of entry ID.
+    VERSION = 2
 
     def __init__(self) -> None:
         self._discovered_host: str | None = None
@@ -210,8 +212,10 @@ class VoltieChargerConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
         if errors.get("base") == "invalid_auth":
-            if host_abort := self._host_configured_abort(host):
-                return host_abort
+            if configured := self._existing_entry_abort(
+                discovery_info, host, mdns_name
+            ):
+                return configured
             await self.async_set_unique_id(f"mdns_{mdns_name}")
             self._abort_if_unique_id_configured()
             self.context["title_placeholders"] = {
@@ -220,8 +224,10 @@ class VoltieChargerConfigFlow(ConfigFlow, domain=DOMAIN):
             return await self.async_step_discovery_auth()
 
         if errors:
-            if host_abort := self._host_configured_abort(host):
-                return host_abort
+            if configured := self._existing_entry_abort(
+                discovery_info, host, mdns_name
+            ):
+                return configured
             await self.async_set_unique_id(f"mdns_{mdns_name}")
             self._abort_if_unique_id_configured()
             self.context["title_placeholders"] = {
@@ -241,10 +247,24 @@ class VoltieChargerConfigFlow(ConfigFlow, domain=DOMAIN):
         }
         return await self.async_step_zeroconf_confirm()
 
-    def _host_configured_abort(self, host: str) -> ConfigFlowResult | None:
-        """Return an abort result if an existing entry is already using this host."""
+    def _existing_entry_abort(
+        self, discovery_info: ZeroconfServiceInfo, host: str, mdns_name: str
+    ) -> ConfigFlowResult | None:
+        """Abort if an existing entry already covers the discovered charger.
+
+        Only reached when the unauthenticated probe failed, so the charger_id is
+        unknown. Comparing the host string alone missed chargers added by IP
+        address and offered them again as newly discovered, so the discovered
+        addresses and the mDNS suffix (the charger ID's last 4 characters)
+        count as well.
+        """
+        addresses = {host, *(str(ip) for ip in discovery_info.ip_addresses)}
+        match = MDNS_NAME_RE.match(mdns_name) or MDNS_NAME_RE.match(host)
+        suffix = match.group(1).lower() if match else None
         for entry in self._async_current_entries(include_ignore=False):
-            if entry.data.get(CONF_HOST) == host:
+            if entry.data.get(CONF_HOST) in addresses or (
+                suffix and (entry.unique_id or "")[-4:].lower() == suffix
+            ):
                 return self.async_abort(reason="already_configured")
         return None
 

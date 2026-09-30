@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+import json
 
 from freezegun.api import FrozenDateTimeFactory
 import pytest
@@ -14,16 +15,21 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClien
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 
 from custom_components.voltie_charger.const import (
     CONFIG_REPROBE_EVERY,
     DATA_CONFIG,
     DATA_RFID_STATUS,
     DEFAULT_SCAN_INTERVAL,
+    DOMAIN,
 )
 
 from .conftest import (
+    charger_device,
     BASE,
+    CHARGER_ID,
+    cdr_payload,
     config_payload,
     power_payload,
     setup_integration,
@@ -170,7 +176,7 @@ async def test_config_soft_fail_latch_stops_polling(
     aioclient_mock: AiohttpClientMocker,
     freezer: FrozenDateTimeFactory,
 ) -> None:
-    """After a /config failure it is only re-probed periodically."""
+    """A /config the firmware reports missing is only re-probed periodically."""
     mock_charger()
     await setup_integration(hass, config_entry)
 
@@ -217,6 +223,46 @@ async def test_config_values_carried_forward_on_failure(
 
     coordinator = config_entry.runtime_data
     assert coordinator.data[DATA_CONFIG]["conf_current_limit"] == 16
+
+
+async def test_config_timeout_does_not_freeze_values(
+    hass: HomeAssistant,
+    mock_charger,
+    config_entry: MockConfigEntry,
+    aioclient_mock: AiohttpClientMocker,
+    freezer: FrozenDateTimeFactory,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A single /config timeout must not stop /config polling (VLT-2890).
+
+    Latching it stopped polling for the whole re-probe window, so a limit
+    changed in the app stayed invisible for ten minutes while the entity kept
+    presenting the old value as current. Weak-WiFi chargers hit this routinely.
+    """
+    eid = f"number.{PREFIX}_maximum_charging_current"
+    mock_charger()
+    await setup_integration(hass, config_entry)
+
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(f"{BASE}/config", exc=TimeoutError())
+    mock_charger()
+    await _advance(hass, freezer)
+    # The failed poll serves the last known value...
+    assert float(hass.states.get(eid).state) == 16.0
+    # ...and the log does not blame the firmware for a network timeout.
+    warnings = [
+        r.getMessage()
+        for r in caplog.records
+        if r.levelname == "WARNING" and "/config" in r.getMessage()
+    ]
+    assert len(warnings) == 1
+    assert "unsupported" not in warnings[0]
+
+    # The limit is changed in the app; the very next poll must pick it up.
+    aioclient_mock.clear_requests()
+    mock_charger(config=config_payload(conf_current_limit=20))
+    await _advance(hass, freezer)
+    assert float(hass.states.get(eid).state) == 20.0
 
 
 async def test_config_recovers(
@@ -306,6 +352,179 @@ async def test_unique_id_backfilled_from_charger_id(
     assert config_entry.unique_id == "000000009d104335"
 
 
+def _entry_at_version(
+    config_entry: MockConfigEntry, version: int, unique_id: str | None = CHARGER_ID
+) -> MockConfigEntry:
+    return MockConfigEntry(
+        domain=DOMAIN,
+        unique_id=unique_id,
+        version=version,
+        data=dict(config_entry.data),
+    )
+
+
+@pytest.mark.parametrize(
+    "unique_id",
+    [
+        CHARGER_ID,
+        # Never backfilled: the charger ID comes from /status, not the entry.
+        None,
+    ],
+)
+async def test_entity_unique_ids_rekeyed_to_charger_id(
+    hass: HomeAssistant,
+    mock_charger,
+    config_entry: MockConfigEntry,
+    entity_registry: er.EntityRegistry,
+    unique_id: str | None,
+) -> None:
+    """v0.3.0 keyed entities by entry ID; they move in place (VLT-2890).
+
+    Same registry entry and entity_id, so history, customisations and
+    automations are untouched, and no second set of entities appears.
+    """
+    mock_charger()
+    entry = _entry_at_version(config_entry, 1, unique_id)
+    entry.add_to_hass(hass)
+    energy = entity_registry.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"voltie_charger_session_energy_{entry.entry_id}",
+        config_entry=entry,
+        suggested_object_id=f"{PREFIX}_session_energy",
+    )
+    # A user-chosen entity_id is the part automations depend on.
+    entity_registry.async_update_entity(
+        energy.entity_id, new_entity_id="sensor.ev_energy"
+    )
+    # The charging switch still carries its pre-v0.2 key.
+    switch = entity_registry.async_get_or_create(
+        "switch",
+        DOMAIN,
+        f"voltie_charger_switch_{entry.entry_id}",
+        config_entry=entry,
+        suggested_object_id=f"{PREFIX}_charging_enabled",
+    )
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert entry.version == 2
+    migrated = entity_registry.async_get("sensor.ev_energy")
+    assert migrated.id == energy.id
+    assert migrated.unique_id == f"voltie_charger_session_energy_{CHARGER_ID}"
+    assert hass.states.get("sensor.ev_energy").state == "0"
+    assert hass.states.get(f"sensor.{PREFIX}_session_energy") is None
+    assert (
+        entity_registry.async_get(switch.entity_id).unique_id
+        == f"voltie_charger_switch_{CHARGER_ID}"
+    )
+    assert hass.states.get(switch.entity_id).state == "on"
+    unique_ids = [
+        e.unique_id
+        for e in er.async_entries_for_config_entry(entity_registry, entry.entry_id)
+    ]
+    assert all(uid.endswith(f"_{CHARGER_ID}") for uid in unique_ids)
+
+
+async def test_new_entities_are_keyed_by_charger_id(
+    hass: HomeAssistant,
+    mock_charger,
+    config_entry: MockConfigEntry,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    mock_charger()
+    await setup_integration(hass, config_entry)
+    unique_ids = [
+        e.unique_id
+        for e in er.async_entries_for_config_entry(
+            entity_registry, config_entry.entry_id
+        )
+    ]
+    assert unique_ids
+    assert all(uid.endswith(f"_{CHARGER_ID}") for uid in unique_ids)
+    assert not any(config_entry.entry_id in uid for uid in unique_ids)
+
+
+async def test_readded_charger_gets_its_entities_back(
+    hass: HomeAssistant,
+    mock_charger,
+    config_entry: MockConfigEntry,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    """Removing and re-adding a charger restores its entities (VLT-2890).
+
+    HA keeps deleted entities for 30 days and restores entity_id, registry ID
+    and customisations for a matching unique_id, which an entry-keyed ID
+    changes on every re-add.
+    """
+    mock_charger()
+    await setup_integration(hass, config_entry)
+    original = entity_registry.async_get(f"sensor.{PREFIX}_session_energy")
+    entity_registry.async_update_entity(
+        original.entity_id, new_entity_id="sensor.ev_energy", name="EV energy"
+    )
+    await hass.async_block_till_done()
+
+    await hass.config_entries.async_remove(config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert entity_registry.async_get("sensor.ev_energy") is None
+
+    readded = _entry_at_version(config_entry, 2)
+    await setup_integration(hass, readded)
+
+    restored = entity_registry.async_get("sensor.ev_energy")
+    assert restored is not None
+    assert restored.id == original.id
+    assert restored.name == "EV energy"
+    assert restored.config_entry_id == readded.entry_id
+    assert hass.states.get(f"sensor.{PREFIX}_session_energy") is None
+
+
+async def test_entry_from_a_newer_release_is_refused(
+    hass: HomeAssistant, mock_charger, config_entry: MockConfigEntry
+) -> None:
+    """Loading a format this release cannot read would corrupt the registry."""
+    mock_charger()
+    entry = _entry_at_version(config_entry, 3)
+    entry.add_to_hass(hass)
+    assert not await hass.config_entries.async_setup(entry.entry_id)
+    assert entry.state is ConfigEntryState.MIGRATION_ERROR
+
+
+async def test_rekey_leaves_a_unique_id_that_is_already_taken(
+    hass: HomeAssistant,
+    mock_charger,
+    config_entry: MockConfigEntry,
+    entity_registry: er.EntityRegistry,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A clash must not fail setup; the registry refuses duplicate IDs."""
+    mock_charger()
+    entry = _entry_at_version(config_entry, 1)
+    entry.add_to_hass(hass)
+    legacy = entity_registry.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"voltie_charger_session_energy_{entry.entry_id}",
+        config_entry=entry,
+        suggested_object_id=f"{PREFIX}_session_energy",
+    )
+    entity_registry.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"voltie_charger_session_energy_{CHARGER_ID}",
+        suggested_object_id="leftover_session_energy",
+    )
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert entry.state is ConfigEntryState.LOADED
+    assert entity_registry.async_get(legacy.entity_id).unique_id == legacy.unique_id
+    assert "Not migrating" in caplog.text
+
+
 async def test_config_write_refreshes_outside_the_lock(
     hass: HomeAssistant,
     mock_charger,
@@ -351,6 +570,37 @@ async def test_diagnostics_redacts_credentials(
     result = await async_get_config_entry_diagnostics(hass, config_entry)
     assert result["entry"]["data"]["host"] == REDACTED
     assert result["coordinator"]["data"]["status"]["charger_id"] == REDACTED
+
+
+async def test_diagnostics_redacts_account_identifiers(
+    hass: HomeAssistant, mock_charger, config_entry: MockConfigEntry
+) -> None:
+    """The active CDR's owner and user are Voltie account IDs (VLT-2890).
+
+    Diagnostics get attached to public GitHub issues, so none of the CDR's
+    identifiers may survive anywhere in the download.
+    """
+    from homeassistant.components.diagnostics import REDACTED
+
+    from custom_components.voltie_charger.diagnostics import (
+        async_get_config_entry_diagnostics,
+    )
+
+    cdr = cdr_payload()
+    mock_charger(status=status_payload(evse_state=3, is_car_connected=True, cdr=cdr))
+    await setup_integration(hass, config_entry)
+    result = await async_get_config_entry_diagnostics(hass, config_entry)
+
+    redacted = result["coordinator"]["data"]["status"]["cdr"]
+    for key in ("owner", "user", "charger_id", "idtag", "idtag_name"):
+        assert redacted[key] == REDACTED, key
+    # Session figures are what makes the download useful, so they stay.
+    assert redacted["chg_energy"] == cdr["chg_energy"]
+
+    dump = json.dumps(result)
+    for value in (cdr["owner"], cdr["user"], cdr["idtag"], cdr["idtag_name"]):
+        assert value not in dump
+    assert CHARGER_ID not in dump
 
 
 @pytest.mark.parametrize("error_status", [500, 502])
@@ -484,13 +734,13 @@ async def test_stale_hw_version_is_cleared_on_upgrade(
         hw_version="1.99",
     )
     assert (
-        device_registry.async_get_device(identifiers={(DOMAIN, CHARGER_ID)}).hw_version
+        charger_device(device_registry, config_entry).hw_version
         == "1.99"
     )
 
     assert await hass.config_entries.async_setup(config_entry.entry_id)
     await hass.async_block_till_done()
 
-    device = device_registry.async_get_device(identifiers={(DOMAIN, CHARGER_ID)})
+    device = charger_device(device_registry, config_entry)
     assert device.hw_version is None
     assert device.sw_version == "1.3.25 (EVSE 1.99)"

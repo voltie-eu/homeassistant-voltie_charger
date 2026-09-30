@@ -1,7 +1,6 @@
 """Shared base entities."""
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from homeassistant.const import CONF_HOST
@@ -16,9 +15,8 @@ from .const import (
     DEFAULT_MODEL,
     DOMAIN,
     MANUFACTURER,
+    MDNS_NAME_RE,
 )
-
-_MDNS_SUFFIX_RE = re.compile(r"voltiecharger-([0-9a-f]+)", re.IGNORECASE)
 
 
 def _format_sw_version(raw: Any) -> str | None:
@@ -63,11 +61,11 @@ def _format_versions(status: dict[str, Any]) -> str | None:
 def _display_suffix(host: str, charger_id: str) -> str:
     """Return the 4-char suffix used in the display name.
 
-    Prefers the MAC-derived mDNS hostname suffix since that's what's printed
-    on the charger's physical label; falls back to the last 4 of charger_id
-    for manually-added chargers.
+    The firmware derives its hostname from the last 4 characters of the
+    charger ID, so both sources give the same suffix; the charger_id fallback
+    covers chargers added by IP address.
     """
-    if match := _MDNS_SUFFIX_RE.match(host):
+    if match := MDNS_NAME_RE.match(host):
         return match.group(1).lower()
     return charger_id[-4:] if charger_id else ""
 
@@ -79,7 +77,10 @@ class VoltieChargerEntity(CoordinatorEntity[VoltieChargerCoordinator]):
 
     def __init__(self, coordinator: VoltieChargerCoordinator, key: str) -> None:
         super().__init__(coordinator)
-        self._attr_unique_id = f"voltie_charger_{key}_{coordinator.entry.entry_id}"
+        # Keyed by the charger, not the config entry: HA only restores a removed
+        # entity's entity_id and customisations when a re-added one presents
+        # the same unique_id.
+        self._attr_unique_id = f"voltie_charger_{key}_{coordinator.charger_id}"
 
     @property
     def _status(self) -> dict[str, Any]:

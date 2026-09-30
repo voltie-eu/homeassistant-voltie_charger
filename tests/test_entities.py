@@ -15,7 +15,9 @@ from homeassistant.helpers import entity_registry as er
 from custom_components.voltie_charger.const import DOMAIN
 
 from .conftest import (
+    charger_device,
     BASE,
+    CHARGER_ID,
     ack,
     config_payload,
     legacy_config_payload,
@@ -96,6 +98,138 @@ async def test_undocumented_evse_state_is_error(
     assert hass.states.get(_eid("sensor", "evse_state")).state == "error"
 
 
+async def test_out_of_service_is_not_an_error(
+    hass: HomeAssistant, mock_charger, config_entry: MockConfigEntry
+) -> None:
+    """conf_out_of_service puts the EVSE in state 18, which read as "error"."""
+    mock_charger(status=status_payload(evse_state=18))
+    await setup_integration(hass, config_entry)
+    assert hass.states.get(_eid("sensor", "evse_state")).state == "disabled"
+    assert hass.states.get(_eid("binary_sensor", "problem")).state == STATE_OFF
+
+
+# ---- problem binary sensor (VLT-2891) ----
+
+
+@pytest.mark.parametrize(
+    ("code", "expected", "error"),
+    [
+        # Before the first valid EVSE read: no false alarm at startup.
+        (0, STATE_OFF, None),
+        (1, STATE_OFF, None),
+        (3, STATE_OFF, None),
+        (6, STATE_ON, "gfci_fault"),
+        (7, STATE_ON, "no_ground"),
+        # The vehicle's fault rather than the charger's, but charging is stuck.
+        (13, STATE_ON, "ev_fault"),
+        # Out of service, booting, a scheduled wait, a firmware update.
+        (18, STATE_OFF, None),
+        (19, STATE_OFF, None),
+        (22, STATE_OFF, None),
+        (24, STATE_OFF, None),
+        (25, STATE_OFF, None),
+        (20, STATE_ON, "mid_meter_missing"),
+        (26, STATE_ON, "pe_n_fault"),
+        # A code newer firmware adds.
+        (99, STATE_ON, "error"),
+    ],
+)
+async def test_problem_sensor(
+    hass: HomeAssistant,
+    mock_charger,
+    config_entry: MockConfigEntry,
+    code: int,
+    expected: str,
+    error: str | None,
+) -> None:
+    mock_charger(status=status_payload(evse_state=code))
+    await setup_integration(hass, config_entry)
+    state = hass.states.get(_eid("binary_sensor", "problem"))
+    assert state.state == expected
+    assert state.attributes["device_class"] == "problem"
+    assert state.attributes["error"] == error
+    assert state.attributes["raw_code"] == code
+
+
+@pytest.mark.parametrize("raw", [None, "6", True])
+async def test_problem_sensor_unknown_without_a_state(
+    hass: HomeAssistant, mock_charger, config_entry: MockConfigEntry, raw
+) -> None:
+    status = status_payload(evse_state=raw)
+    if raw is None:
+        status.pop("evse_state")
+    mock_charger(status=status)
+    await setup_integration(hass, config_entry)
+    assert hass.states.get(_eid("binary_sensor", "problem")).state == "unknown"
+
+
+# ---- total energy (VLT-2891) ----
+
+
+async def test_total_energy_needs_firmware_support(
+    hass: HomeAssistant,
+    mock_charger,
+    config_entry: MockConfigEntry,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    """No firmware reports meter_kwh yet; a permanently unknown entity helps no one."""
+    mock_charger()
+    await setup_integration(hass, config_entry)
+    assert entity_registry.async_get_entity_id(
+        "sensor", DOMAIN, f"voltie_charger_total_energy_{CHARGER_ID}"
+    ) is None
+
+
+@pytest.mark.parametrize(
+    ("reading", "expected"),
+    [
+        (1523.4, "1523.4"),
+        # A real zero, a brand-new charger.
+        (0, "0"),
+        # The firmware's "no fresh reading"; a 0 would register as a meter reset.
+        (-1, "unknown"),
+        (None, "unknown"),
+        ("1523.4", "unknown"),
+        (True, "unknown"),
+    ],
+)
+async def test_total_energy_reading(
+    hass: HomeAssistant,
+    mock_charger,
+    config_entry: MockConfigEntry,
+    reading,
+    expected: str,
+) -> None:
+    mock_charger(status=status_payload(meter_kwh=reading))
+    await setup_integration(hass, config_entry)
+    state = hass.states.get(_eid("sensor", "total_energy"))
+    assert state.state == expected
+    assert state.attributes["state_class"] == "total_increasing"
+    assert state.attributes["device_class"] == "energy"
+    assert state.attributes["unit_of_measurement"] == "kWh"
+
+
+async def test_hungarian_translation_is_loaded(
+    hass: HomeAssistant, mock_charger, config_entry: MockConfigEntry
+) -> None:
+    """translations/hu.json names the entities on a Hungarian system (VLT-2890).
+
+    Hungarian is one of the languages HA also derives new entity IDs from, so a
+    fresh install there gets Hungarian object IDs rather than the English ones.
+    """
+    hass.config.language = "hu"
+    mock_charger()
+    await setup_integration(hass, config_entry)
+
+    state = hass.states.get("sensor.voltie_charger_4335_toltott_energia")
+    assert state is not None
+    assert state.name == "Voltie Charger 4335 Töltött energia"
+    assert (
+        hass.states.get("number.voltie_charger_4335_epuletaram_korlat").name
+        == "Voltie Charger 4335 Épületáram-korlát"
+    )
+
+
 # ---- number: dynamic upper bound from current_hw_limit ----
 
 
@@ -140,7 +274,7 @@ async def test_new_config_numbers_exposed(
     await setup_integration(hass, config_entry)
 
     expected = {
-        "building_current_limit": (16.0, 6.0, 32.0),
+        "building_current_limit": (16.0, 6.0, 200.0),
         "eco_mode_start_current": (3.0, 1.0, 5.0),
         "grid_control_stop_voltage": (230.0, 200.0, 300.0),
         "grid_control_minimum_voltage": (235.0, 200.0, 300.0),
@@ -154,6 +288,55 @@ async def test_new_config_numbers_exposed(
         assert float(state.state) == value, slug
         assert state.attributes["min"] == minimum, slug
         assert state.attributes["max"] == maximum, slug
+
+
+async def test_building_current_limit_goes_to_200_a(
+    hass: HomeAssistant,
+    mock_charger,
+    config_entry: MockConfigEntry,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """3x40 A and 3x63 A supplies are common, so 32 A was too low (VLT-2890).
+
+    The mobile app can already store values like 130 A, which must read back
+    as a normal in-range value.
+    """
+    mock_charger(config=config_payload(conf_dlm_current_limit=130))
+    await setup_integration(hass, config_entry)
+    eid = _eid("number", "building_current_limit")
+    state = hass.states.get(eid)
+    assert float(state.state) == 130.0
+    assert state.attributes["max"] == 200.0
+
+    await hass.services.async_call(
+        "number",
+        "set_value",
+        {ATTR_ENTITY_ID: eid, "value": 200},
+        blocking=True,
+    )
+    put = [c for c in aioclient_mock.mock_calls if c[0] == "PUT"][-1]
+    assert put[2] == {"conf_dlm_current_limit": 200}
+
+
+async def test_building_current_limit_refused_by_older_firmware(
+    hass: HomeAssistant,
+    mock_charger,
+    config_entry: MockConfigEntry,
+    aioclient_mock: AiohttpClientMocker,
+) -> None:
+    """Firmware still capping it at 32 A drops 63 A; the error must say why."""
+    mock_charger()
+    await setup_integration(hass, config_entry)
+    aioclient_mock.clear_requests()
+    aioclient_mock.put(f"{BASE}/config", json=ack(accepted=0))
+
+    with pytest.raises(HomeAssistantError, match="outside the range"):
+        await hass.services.async_call(
+            "number",
+            "set_value",
+            {ATTR_ENTITY_ID: _eid("number", "building_current_limit"), "value": 63},
+            blocking=True,
+        )
 
 
 async def test_config_entities_unavailable_on_legacy_firmware(
@@ -381,7 +564,7 @@ async def test_rfid_list_hash_is_a_string_sensor(
     entity_registry.async_get_or_create(
         "sensor",
         DOMAIN,
-        f"voltie_charger_rfid_list_hash_{config_entry.entry_id}",
+        f"voltie_charger_rfid_list_hash_{CHARGER_ID}",
         suggested_object_id=f"{PREFIX}_rfid_list_hash",
         disabled_by=None,
     )
@@ -474,9 +657,7 @@ async def test_device_info(
     mock_charger(status=status_payload(sw_ver=1003025, fw_ver=105))
     await setup_integration(hass, config_entry)
 
-    device = device_registry.async_get_device(
-        identifiers={(DOMAIN, "000000009d104335")}
-    )
+    device = charger_device(device_registry, config_entry)
     assert device.configuration_url == "http://192.168.1.234:5059"
     assert device.sw_version == "1.3.25 (EVSE 1.05)"
     assert device.hw_version is None

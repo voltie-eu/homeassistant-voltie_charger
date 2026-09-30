@@ -10,7 +10,10 @@ from homeassistant.core import HomeAssistant
 from . import VoltieChargerConfigEntry
 
 REDACT_CONFIG = {CONF_PASSWORD, CONF_USERNAME, CONF_HOST}
-REDACT_DATA = {"charger_id", "idtag", "idtag_name"}
+# The active CDR also carries "owner" (the owner's Voltie account ID) and
+# "user" (the ID of whoever started the session). Diagnostics get attached to
+# public GitHub issues, so account identifiers must not leak through them.
+REDACT_DATA = {"charger_id", "idtag", "idtag_name", "owner", "user"}
 
 
 async def async_get_config_entry_diagnostics(

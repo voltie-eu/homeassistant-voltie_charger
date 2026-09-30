@@ -11,7 +11,13 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 from custom_components.voltie_charger.const import DOMAIN
 
-from .conftest import BASE, ack, legacy_config_payload, setup_integration
+from .conftest import (
+    BASE,
+    ack,
+    charger_device,
+    legacy_config_payload,
+    setup_integration,
+)
 
 CHARGER_IDENTIFIER = "000000009d104335"
 
@@ -36,9 +42,7 @@ async def device_id(
     """Set up a v5 charger and return its device_id."""
     mock_charger()
     await setup_integration(hass, config_entry)
-    device = device_registry.async_get_device(
-        identifiers={(DOMAIN, CHARGER_IDENTIFIER)}
-    )
+    device = charger_device(device_registry, config_entry)
     return device.id
 
 
@@ -330,9 +334,7 @@ async def test_rfid_services_rejected_on_pre_v5_firmware(
     """A clear message beats letting the request 404."""
     mock_charger(rfid_supported=False, apiver=4, config=legacy_config_payload())
     await setup_integration(hass, config_entry)
-    device = device_registry.async_get_device(
-        identifiers={(DOMAIN, CHARGER_IDENTIFIER)}
-    )
+    device = charger_device(device_registry, config_entry)
 
     with pytest.raises(ServiceValidationError, match="API v5"):
         await hass.services.async_call(

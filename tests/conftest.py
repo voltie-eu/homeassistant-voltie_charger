@@ -80,6 +80,41 @@ def status_payload(**overrides: Any) -> dict[str, Any]:
     return payload
 
 
+def cdr_payload(**overrides: Any) -> dict[str, Any]:
+    """The active CDR block of /status during a session.
+
+    Field set follows the firmware's CDR_AddToJson() for API responses, which
+    includes account identifiers the spec examples leave out.
+    """
+    payload: dict[str, Any] = {
+        "cdr_id": 446,
+        "cdr_ver": 3,
+        "s_start": 1708335000,
+        "charger_id": CHARGER_ID,
+        "owner": "backend-user-7f3a9c",
+        "user": "backend-user-51d2e8",
+        "chg_energy": 5.852,
+        "chg_time": 3120,
+        "idle_time": 240,
+        "avg_power": 6.75,
+        "max_power": 7.2,
+        "phase": 1,
+        "sw_ver": 1003025,
+        "fw_ver": 199,
+        "idtag": "0A1B2C3D",
+        "idtag_name": "John Doe",
+        "last_update": 1708338360,
+        "meter_start_kwh": 1523.4,
+        "meter_stop_kwh": -1,
+        "certified_meter": False,
+        "periods": [
+            {"index": 0, "p_start": 1708335000, "p_stmode": 1, "p_energy": 5.852}
+        ],
+    }
+    payload.update(overrides)
+    return payload
+
+
 def power_payload(**overrides: Any) -> dict[str, Any]:
     """A /power response (spec 4.9)."""
     stat = {
@@ -218,6 +253,8 @@ def mock_charger(
         aioclient_mock.get(f"{BASE}/start", json=ack(cdr_id=629))
         aioclient_mock.get(f"{BASE}/stop", json=ack())
         aioclient_mock.post(f"{BASE}/extras", json=ack())
+        # Any record not registered earlier: the firmware answers null.
+        aioclient_mock.get(f"{BASE}/cdr", json=ack(cdr=None))
 
         if apiver is None:
             aioclient_mock.get(f"{BASE}/apiver", status=404)
@@ -253,6 +290,7 @@ def config_entry() -> MockConfigEntry:
         domain=DOMAIN,
         title=f"Voltie Charger ({HOST})",
         unique_id=CHARGER_ID,
+        version=2,
         data={
             CONF_HOST: HOST,
             CONF_PORT: PORT,
@@ -260,6 +298,20 @@ def config_entry() -> MockConfigEntry:
             CONF_PASSWORD: "",
         },
     )
+
+
+def charger_device(device_registry, config_entry: MockConfigEntry):
+    """The charger's device, looked up the way the running release wants.
+
+    Home Assistant 2026.9 made async_get_device(identifiers=...) raise in tests
+    in favour of an entry-scoped lookup that older releases do not have.
+    """
+    identifier = (DOMAIN, CHARGER_ID)
+    if hasattr(device_registry, "async_get_device_by_identifier"):
+        return device_registry.async_get_device_by_identifier(
+            identifier, config_entry.entry_id
+        )
+    return device_registry.async_get_device(identifiers={identifier})
 
 
 async def setup_integration(

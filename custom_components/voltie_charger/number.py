@@ -83,7 +83,7 @@ NUMBERS: tuple[VoltieNumberDescription, ...] = (
         native_max_value=CURRENT_LIMIT_MAX,
         max_value_fn=_hw_current_limit,
     ),
-    # Building-side limit, not a hardware property: fixed 6..32 A per spec 5.4.
+    # Building-side limit, not a hardware property, so the bound is static.
     VoltieNumberDescription(
         key="dlm_current_limit",
         translation_key="dlm_current_limit",

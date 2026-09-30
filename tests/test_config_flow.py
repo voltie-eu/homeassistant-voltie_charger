@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from ipaddress import ip_address
 
+import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
@@ -272,3 +273,92 @@ async def test_zeroconf_api_disabled_offers_retry(
     )
     assert result["type"] is FlowResultType.MENU
     assert result["step_id"] == "api_disabled"
+
+
+def _discovery(
+    *,
+    name: str = "voltiecharger-4335",
+    hostname: str | None = None,
+    ip: str = HOST,
+) -> ZeroconfServiceInfo:
+    """A charger's mDNS announcement; the firmware uses one name for both."""
+    return ZeroconfServiceInfo(
+        ip_address=ip_address(ip),
+        ip_addresses=[ip_address(ip)],
+        hostname=hostname or f"{name}.local.",
+        name=f"{name}._voltie-info._tcp.local.",
+        port=API_PORT,
+        type="_voltie-info._tcp.local.",
+        properties={},
+    )
+
+
+@pytest.mark.parametrize(
+    ("probe", "discovered_ip"),
+    [
+        ({"status": 401}, HOST),
+        # DHCP handed the charger a new address since it was set up.
+        ({"status": 401}, "192.168.1.77"),
+        # HTTP API switched off: the probe never answers.
+        ({"exc": TimeoutError()}, "192.168.1.77"),
+    ],
+)
+async def test_zeroconf_skips_charger_added_by_ip(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+    probe: dict,
+    discovered_ip: str,
+) -> None:
+    """A charger set up by IP address must not be offered again (VLT-2890).
+
+    When the unauthenticated probe fails the charger_id is unknown, and only
+    the host string used to be compared, so "voltiecharger-4335.local" never
+    matched the configured "192.168.1.234".
+    """
+    config_entry.add_to_hass(hass)
+    aioclient_mock.get(f"http://voltiecharger-4335.local:{API_PORT}/status", **probe)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_ZEROCONF},
+        data=_discovery(ip=discovered_ip),
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+
+
+async def test_zeroconf_matches_configured_address_without_suffix(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """The discovered address alone identifies it when the name has no suffix."""
+    config_entry.add_to_hass(hass)
+    aioclient_mock.get(f"http://garage.local:{API_PORT}/status", status=401)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_ZEROCONF},
+        data=_discovery(name="garage"),
+    )
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "already_configured"
+
+
+async def test_zeroconf_still_offers_another_protected_charger(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    config_entry: MockConfigEntry,
+) -> None:
+    """Only the configured charger is skipped, not every protected one."""
+    config_entry.add_to_hass(hass)
+    aioclient_mock.get(f"http://voltiecharger-beef.local:{API_PORT}/status", status=401)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_ZEROCONF},
+        data=_discovery(name="voltiecharger-beef", ip="192.168.1.77"),
+    )
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "discovery_auth"

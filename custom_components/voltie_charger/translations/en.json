@@ -64,9 +64,11 @@
     },
     "abort": {
       "already_configured": "This charger is already configured.",
+      "already_in_progress": "This charger is already being set up.",
       "cannot_connect": "Could not reach the charger at the given address.",
       "wrong_charger": "The charger at this address has a different ID than the one configured.",
-      "reauth_successful": "Reauthentication successful."
+      "reauth_successful": "Reauthentication successful.",
+      "reconfigure_successful": "Reconfiguration successful."
     }
   },
   "options": {
@@ -84,6 +86,37 @@
   },
   "entity": {
     "binary_sensor": {
+      "problem": {
+        "name": "Problem",
+        "state_attributes": {
+          "error": {
+            "name": "Error",
+            "state": {
+              "diode_check_failed": "Diode check failed",
+              "gfci_fault": "GFCI fault",
+              "no_ground": "No ground detected",
+              "stuck_relay": "Stuck relay",
+              "gfi_self_test_failure": "GFI self-test failure",
+              "over_temperature": "Over-temperature",
+              "over_current": "Over-current",
+              "i2c_bus_error": "Internal bus error",
+              "ev_fault": "Vehicle fault",
+              "over_humidity": "Over-humidity",
+              "phase_misconnected": "Phase misconnected",
+              "overvoltage": "Over-voltage",
+              "undervoltage": "Under-voltage",
+              "mid_meter_missing": "MID meter missing",
+              "power_board_unknown": "Unknown power board",
+              "shutdown": "Shut down",
+              "pe_n_fault": "PE-N fault",
+              "error": "Error"
+            }
+          },
+          "raw_code": {
+            "name": "Raw code"
+          }
+        }
+      },
       "car_connected": {
         "name": "Car connected"
       },
@@ -153,11 +186,23 @@
           "phase_misconnected": "Phase misconnected",
           "overvoltage": "Over-voltage",
           "undervoltage": "Under-voltage",
+          "disabled": "Disabled",
+          "booting": "Starting up",
+          "mid_meter_missing": "MID meter missing",
+          "power_board_unknown": "Unknown power board",
+          "waiting_for_timer": "Waiting for timer",
+          "shutdown": "Shut down",
+          "undetermined": "Undetermined",
+          "firmware_update": "Firmware update in progress",
+          "pe_n_fault": "PE-N fault",
           "error": "Error"
         }
       },
       "session_energy": {
         "name": "Session energy"
+      },
+      "total_energy": {
+        "name": "Total energy"
       },
       "session_charge_time": {
         "name": "Session charge time"
@@ -282,6 +327,48 @@
       },
       "rfid_learn_cancel": {
         "name": "Cancel RFID learn mode"
+      }
+    },
+    "event": {
+      "charging_session": {
+        "name": "Charging session",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "session_finished": "Session finished"
+            }
+          },
+          "cdr_id": {
+            "name": "Charging record"
+          },
+          "session_start": {
+            "name": "Session start"
+          },
+          "session_end": {
+            "name": "Session end"
+          },
+          "energy_kwh": {
+            "name": "Energy"
+          },
+          "charge_time_s": {
+            "name": "Charging time"
+          },
+          "idle_time_s": {
+            "name": "Idle time"
+          },
+          "avg_power_kw": {
+            "name": "Average power"
+          },
+          "max_power_kw": {
+            "name": "Maximum power"
+          },
+          "idtag_name": {
+            "name": "RFID tag"
+          },
+          "closed_after_restart": {
+            "name": "Closed by a restart"
+          }
+        }
       }
     }
   },
@@ -417,6 +504,16 @@
           "description": "Maximum number of tags to return. Zero returns all of them."
         }
       }
+    }
+  },
+  "issues": {
+    "outdated_firmware": {
+      "title": "{name} runs older firmware",
+      "description": "{name} reports an HTTP API older than version 5, so the features that need it, such as RFID tag management, are not available. Chargers update their firmware from the Voltie cloud automatically, so keep this one connected to the internet. This message clears itself once the charger runs newer firmware."
+    },
+    "unauthenticated_api": {
+      "title": "{name} accepts HTTP API requests without a password",
+      "description": "Anyone on your local network can read and control {name} through its HTTP API. Set a username and password for the HTTP API in the Voltie mobile app; Home Assistant then asks for them if it needs them, and this message clears itself. If the charger is on a network only you control, you can ignore this message."
     }
   }
 }

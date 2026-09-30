@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+import re
 
 from homeassistant.const import Platform
 
@@ -9,9 +10,15 @@ DOMAIN = "voltie_charger"
 MANUFACTURER = "Voltie"
 DEFAULT_MODEL = "Voltie Charger"
 
+# The firmware names the charger "voltiecharger-" plus the last four characters
+# of its charger ID, as both hostname and mDNS instance name (voltie-rpi
+# rewriteHostName()). The group is that suffix.
+MDNS_NAME_RE = re.compile(r"voltiecharger-([0-9a-f]{4})(?![0-9a-f])", re.IGNORECASE)
+
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
     Platform.BUTTON,
+    Platform.EVENT,
     Platform.NUMBER,
     Platform.SELECT,
     Platform.SENSOR,
@@ -29,6 +36,7 @@ UPDATE_RETRY_BACKOFF_S = 1.0
 CONFIG_REPROBE_EVERY = 20
 
 ENDPOINT_APIVER = "apiver"
+ENDPOINT_CDR = "cdr"
 ENDPOINT_STATUS = "status"
 ENDPOINT_POWER = "power"
 ENDPOINT_CONFIG = "config"
@@ -50,13 +58,36 @@ DATA_POWER = "power"
 DATA_CONFIG = "config"
 DATA_RFID_STATUS = "rfid_status"
 
+# /status field for the charger's lifetime meter reading in kWh: the MID meter
+# where one is fitted, the EVSE's lifetime counter otherwise, and -1 while
+# neither has a fresh reading. Proposed in VLT-2675 (A7) and not in any
+# firmware yet, so everything that reads it copes with its absence.
+STATUS_METER_KWH = "meter_kwh"
+
+# Oldest HTTP API major version with every feature this integration offers.
+MIN_FULL_API_VERSION = 5
+
+# Repair issue translation keys; issue IDs add the config entry ID.
+ISSUE_OUTDATED_FIRMWARE = "outdated_firmware"
+ISSUE_UNAUTHENTICATED_API = "unauthenticated_api"
+# How often to look again whether the HTTP API still answers anonymously.
+AUTH_RECHECK_INTERVAL = timedelta(hours=1)
+
+# Charging-session tracking, persisted so a session that ends while Home
+# Assistant is down is still reported once it is back.
+SESSION_STORE_VERSION = 1
+EVENT_SESSION_FINISHED = "session_finished"
+
 CURRENT_LIMIT_MIN = 6
 CURRENT_LIMIT_MAX = 32
 CURRENT_LIMIT_STEP = 1
 
-# Ranges from the v5.0 spec, appendix 5.4 (configuration parameters).
+# Ranges from the v5.0 spec, appendix 5.4 (configuration parameters), except
+# the building limit: the spec caps it at 32 A, but 3x40 A and 3x63 A supplies
+# are common, so Voltie raised it to 200 A (VLT-2675). Firmware that still
+# enforces 32 A drops a higher value, which async_set_config reports.
 DLM_CURRENT_LIMIT_MIN = 6
-DLM_CURRENT_LIMIT_MAX = 32
+DLM_CURRENT_LIMIT_MAX = 200
 ECO_START_CURRENT_MIN = 1
 ECO_START_CURRENT_MAX = 5
 GRID_VOLTAGE_MIN = 200
@@ -153,10 +184,11 @@ ATTR_MAX_COUNT = "max_count"
 ATTR_TIMEOUT_SEC = "timeout_sec"
 ATTR_COUNT_MAX = "count_max"
 
-# Values mirror the charger firmware's internal EVSE state enum, which is more
-# detailed than the documented set in spec appendix 5.1. State 4 (charging with
-# ventilation) is obsolete but still documented as a valid charging state, so it
-# is mapped rather than left to fall through to "error".
+# Values mirror the charger firmware's internal EVSE state enum (voltie-rpi
+# evse_state.h), which is more detailed than the documented set in spec
+# appendix 5.1. State 4 (charging with ventilation) is obsolete but still
+# documented as a valid charging state, so it is mapped rather than left to
+# fall through to "error".
 EVSE_STATES: dict[int, str] = {
     0: "unknown",
     1: "ev_not_connected",
@@ -176,5 +208,22 @@ EVSE_STATES: dict[int, str] = {
     15: "phase_misconnected",
     16: "overvoltage",
     17: "undervoltage",
+    # conf_out_of_service puts the EVSE here.
+    18: "disabled",
+    19: "booting",
+    20: "mid_meter_missing",
+    21: "power_board_unknown",
+    22: "waiting_for_timer",
+    23: "shutdown",
+    24: "undetermined",
+    25: "firmware_update",
+    26: "pe_n_fault",
 }
 EVSE_STATE_ERROR = "error"
+
+# States that are not a problem. Everything else, including codes newer
+# firmware may add, is. Unlike the firmware, which only counts faults of the
+# charger itself, a vehicle fault (13) counts too: charging is stuck either
+# way. 0 is what the charger reports before its first valid EVSE read, so
+# counting it would raise a false alarm on every start.
+EVSE_NON_PROBLEM_STATES = frozenset({0, 1, 2, 3, 4, 18, 19, 22, 24, 25})

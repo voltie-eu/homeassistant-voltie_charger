@@ -15,6 +15,7 @@ from .const import (
     CMD_RFID_LEARN,
     CMD_RFID_LEARN_CANCEL,
     ENDPOINT_APIVER,
+    ENDPOINT_CDR,
     ENDPOINT_CONFIG,
     ENDPOINT_EXTRAS,
     ENDPOINT_POWER,
@@ -198,6 +199,20 @@ class VoltieChargerClient:
     async def async_get_status(self) -> dict[str, Any]:
         return await self._request("GET", ENDPOINT_STATUS)
 
+    async def async_accepts_anonymous(self) -> bool:
+        """Whether the charger answers /status without credentials.
+
+        Sent without auth even when this client has credentials: those are
+        accepted whether or not the charger enforces them, so only an
+        anonymous request tells an open API from a protected one.
+        """
+        anonymous = VoltieChargerClient(self._session, self._host, port=self._port)
+        try:
+            await anonymous.async_get_status()
+        except VoltieChargerAuthError:
+            return False
+        return True
+
     async def async_get_power(self) -> dict[str, Any]:
         return await self._request("GET", ENDPOINT_POWER)
 
@@ -213,8 +228,9 @@ class VoltieChargerClient:
         if isinstance(accepted, int) and accepted < len(values):
             raise VoltieChargerRejectedError(
                 f"Charger accepted only {accepted}/{len(values)} config "
-                "parameters; the rest were rejected (unsupported on this "
-                "hardware, cable connected, or EVSE in an error state)."
+                "parameters; the rest were rejected (value outside the range "
+                "this firmware accepts, unsupported on this hardware, cable "
+                "connected, or EVSE in an error state)."
             )
         return result
 
@@ -233,6 +249,14 @@ class VoltieChargerClient:
 
     async def async_stop(self) -> dict[str, Any]:
         return await self._request("GET", ENDPOINT_STOP)
+
+    async def async_get_cdr(self, cdr_id: int) -> dict[str, Any] | None:
+        """Return a stored charging record, or None if the charger has none."""
+        payload = await self._request(
+            "GET", ENDPOINT_CDR, params={"cdr_id": str(cdr_id)}
+        )
+        cdr = payload.get("cdr")
+        return cdr if isinstance(cdr, dict) else None
 
     async def async_get_apiver(self) -> int | None:
         """Return the charger's major API version, or None if unreported."""

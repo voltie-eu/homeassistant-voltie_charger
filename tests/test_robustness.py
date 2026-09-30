@@ -16,7 +16,7 @@ from homeassistant.exceptions import ServiceValidationError
 
 from custom_components.voltie_charger.const import DEFAULT_SCAN_INTERVAL, DOMAIN
 
-from .conftest import BASE, setup_integration, status_payload
+from .conftest import BASE, charger_device, setup_integration, status_payload
 
 PREFIX = "voltie_charger_4335"
 
@@ -65,9 +65,7 @@ async def test_service_on_unloaded_entry_is_clean(
     """After unload, runtime_data is gone: must be a clean error, not AttributeError."""
     mock_charger()
     await setup_integration(hass, config_entry)
-    device = device_registry.async_get_device(
-        identifiers={(DOMAIN, "000000009d104335")}
-    )
+    device = charger_device(device_registry, config_entry)
     assert await hass.config_entries.async_unload(config_entry.entry_id)
     await hass.async_block_till_done()
 
@@ -82,9 +80,7 @@ async def test_list_rfid_tags_on_unloaded_entry(
 ) -> None:
     mock_charger()
     await setup_integration(hass, config_entry)
-    device = device_registry.async_get_device(
-        identifiers={(DOMAIN, "000000009d104335")}
-    )
+    device = charger_device(device_registry, config_entry)
     await hass.config_entries.async_unload(config_entry.entry_id)
     await hass.async_block_till_done()
 
@@ -338,9 +334,7 @@ async def test_list_rfid_tags_response_is_self_consistent(
     """count must never exceed the tags actually returned."""
     mock_charger()
     await setup_integration(hass, config_entry)
-    device = device_registry.async_get_device(
-        identifiers={(DOMAIN, "000000009d104335")}
-    )
+    device = charger_device(device_registry, config_entry)
     aioclient_mock.clear_requests()
     aioclient_mock.get(
         f"{BASE}/rfid",

@@ -30,6 +30,7 @@ from .const import (
     DATA_STATUS,
     EVSE_STATE_ERROR,
     EVSE_STATES,
+    STATUS_METER_KWH,
 )
 from .entity import VoltieChargerEntity, VoltieChargerRfidEntity
 
@@ -64,6 +65,18 @@ def _session_energy(data: dict[str, Any]) -> int | float | None:
     if "cdr" in status and status["cdr"] is None and status.get("evse_state") == 1:
         return 0
     value = _numeric(_cdr(data).get("chg_energy"))
+    return value if value is not None and isfinite(value) and value >= 0 else None
+
+
+def _meter_energy(data: dict[str, Any]) -> int | float | None:
+    """The lifetime meter reading, never a made-up 0.
+
+    -1 is the firmware's "no fresh reading". It, and anything missing or
+    malformed, must read as unknown: a 0 would look like a meter reset to the
+    Energy dashboard, which would then count the whole lifetime again once the
+    real reading returns.
+    """
+    value = _numeric(_status(data).get(STATUS_METER_KWH))
     return value if value is not None and isfinite(value) and value >= 0 else None
 
 
@@ -230,6 +243,23 @@ SENSORS: tuple[VoltieSensorDescription, ...] = (
 )
 
 
+# Only created when the firmware reports the reading (VLT-2675); until then
+# the entity would be permanently unknown.
+METER_SENSORS: tuple[VoltieSensorDescription, ...] = (
+    VoltieSensorDescription(
+        key="total_energy",
+        translation_key="total_energy",
+        device_class=SensorDeviceClass.ENERGY,
+        native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        # A lifetime counter, so unlike session_energy it never restarts from
+        # zero: the right source for the Energy dashboard.
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        suggested_display_precision=2,
+        value_fn=_meter_energy,
+    ),
+)
+
+
 RFID_SENSORS: tuple[VoltieSensorDescription, ...] = (
     VoltieSensorDescription(
         key="rfid_list_count",
@@ -352,6 +382,11 @@ async def async_setup_entry(
         for description in (*SENSORS, *PER_PHASE_SENSORS)
     ]
     entities.append(VoltieChargerApiVersionSensor(coordinator))
+    if STATUS_METER_KWH in (coordinator.data or {}).get(DATA_STATUS, {}):
+        entities.extend(
+            VoltieChargerSensor(coordinator, description)
+            for description in METER_SENSORS
+        )
     # Skipped entirely on pre-v5 firmware so old chargers don't get a row of
     # permanently unavailable entities.
     if coordinator.rfid_supported:

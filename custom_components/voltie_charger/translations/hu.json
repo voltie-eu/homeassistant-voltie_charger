@@ -1,0 +1,519 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "title": "Csatlakozás a Voltie töltőhöz",
+        "description": "Add meg a töltő IP-címét vagy hálózati nevét a helyi hálózaton. Felhasználónév és jelszó csak akkor szükséges, ha a mobilalkalmazásban bekapcsoltad a HTTP-hitelesítést.",
+        "data": {
+          "host": "Gazdagép",
+          "port": "Port",
+          "username": "Felhasználónév",
+          "password": "Jelszó"
+        },
+        "data_description": {
+          "port": "A töltő HTTP API-portja. Hagyd 5059-en, hacsak nem változtattad meg."
+        }
+      },
+      "reconfigure": {
+        "title": "Voltie töltő újrakonfigurálása",
+        "description": "Frissítsd a töltő kapcsolódási adatait.",
+        "data": {
+          "host": "Gazdagép",
+          "port": "Port",
+          "username": "Felhasználónév",
+          "password": "Jelszó"
+        },
+        "data_description": {
+          "port": "A töltő HTTP API-portja. Hagyd 5059-en, hacsak nem változtattad meg."
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "Voltie töltő észlelve",
+        "description": "Szeretnéd hozzáadni a Home Assistanthoz a következő címen elérhető töltőt: {host}?"
+      },
+      "discovery_auth": {
+        "title": "Hitelesítés az észlelt töltőn",
+        "description": "A következő címen elérhető töltő felhasználónevet és jelszót kér: {host}.",
+        "data": {
+          "username": "Felhasználónév",
+          "password": "Jelszó"
+        }
+      },
+      "api_disabled": {
+        "title": "A töltő HTTP API-ja ki van kapcsolva",
+        "description": "A töltő (**{host}**) látható a hálózaton, de a HTTP API-ja ki van kapcsolva. Kapcsold be a Voltie mobilalkalmazásban: **Beállítások → Haladó beállítások → Kísérleti funkciók → HTTP API**, majd nyomd meg az Újra gombot.",
+        "menu_options": {
+          "api_retry": "Újra"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Újrahitelesítés a töltőn",
+        "description": "Add meg a következő címen elérhető töltő frissített hitelesítési adatait: {host}.",
+        "data": {
+          "username": "Felhasználónév",
+          "password": "Jelszó"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Nem sikerült elérni a töltőt. Ellenőrizd a címet, és hogy a töltő a hálózaton van-e.",
+      "invalid_auth": "A töltő elutasította a felhasználónevet vagy a jelszót.",
+      "incomplete_credentials": "Adj meg felhasználónevet és jelszót is, vagy hitelesítés nélküli kapcsolathoz hagyd mindkettőt üresen.",
+      "unknown": "Váratlan hiba történt. A részleteket a naplóban találod."
+    },
+    "abort": {
+      "already_configured": "Ez a töltő már be van állítva.",
+      "already_in_progress": "Ennek a töltőnek a beállítása már folyamatban van.",
+      "cannot_connect": "A megadott címen nem érhető el a töltő.",
+      "wrong_charger": "Ezen a címen más azonosítójú töltő érhető el, mint amelyik be van állítva.",
+      "reauth_successful": "Sikeres újrahitelesítés.",
+      "reconfigure_successful": "Sikeres újrakonfigurálás."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Voltie töltő beállításai",
+        "data": {
+          "scan_interval": "Lekérdezési időköz (másodperc)"
+        },
+        "data_description": {
+          "scan_interval": "Milyen gyakran kérdezze le az integráció a töltőt. Kisebb érték gyorsabb frissítést ad, de jobban terheli a töltőt."
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "problem": {
+        "name": "Hiba",
+        "state_attributes": {
+          "error": {
+            "name": "Hiba típusa",
+            "state": {
+              "diode_check_failed": "Dióda-ellenőrzési hiba",
+              "gfci_fault": "Szivárgóáram",
+              "no_ground": "Nem érzékelhető védőföld",
+              "stuck_relay": "Beragadt relé",
+              "gfi_self_test_failure": "Sikertelen szivárgóáram-teszt",
+              "over_temperature": "Túlmelegedés",
+              "over_current": "Túláram",
+              "i2c_bus_error": "Belső buszhiba",
+              "ev_fault": "Járműhiba",
+              "over_humidity": "Túl magas páratartalom",
+              "phase_misconnected": "Hibás fázisbekötés",
+              "overvoltage": "Túlfeszültség",
+              "undervoltage": "Alacsony feszültség",
+              "mid_meter_missing": "MID-mérő nem található",
+              "power_board_unknown": "Ismeretlen teljesítménypanel",
+              "shutdown": "Leállítva",
+              "pe_n_fault": "Védőföld-nulla túlfeszültség",
+              "error": "Hiba"
+            }
+          },
+          "raw_code": {
+            "name": "Nyers kód"
+          }
+        }
+      },
+      "car_connected": {
+        "name": "Jármű csatlakoztatva"
+      },
+      "is_charging": {
+        "name": "Töltés"
+      },
+      "dlm_valid": {
+        "name": "DLM-adatok érvényesek"
+      },
+      "ipm_valid": {
+        "name": "IPM-adatok érvényesek"
+      },
+      "rfid_reader_enabled": {
+        "name": "RFID-olvasó engedélyezve"
+      },
+      "rfid_reader_working": {
+        "name": "RFID-olvasó működik"
+      },
+      "rfid_learn_in_progress": {
+        "name": "RFID-feltanító mód"
+      }
+    },
+    "sensor": {
+      "mains_voltage": {
+        "name": "Hálózati feszültség"
+      },
+      "phases": {
+        "name": "Bekötött fázisok",
+        "state": {
+          "1": "Egyfázisú",
+          "3": "Háromfázisú"
+        }
+      },
+      "phases_used": {
+        "name": "Aktív fázisok"
+      },
+      "current_hw_limit": {
+        "name": "Hardveres áramkorlát"
+      },
+      "current_offered": {
+        "name": "Felkínált áram"
+      },
+      "charge_current": {
+        "name": "Töltőáram"
+      },
+      "charge_power": {
+        "name": "Töltési teljesítmény"
+      },
+      "evse_state": {
+        "name": "EVSE-állapot",
+        "state": {
+          "unknown": "Ismeretlen",
+          "ev_not_connected": "Nincs jármű csatlakoztatva",
+          "ev_connected_not_charging": "Jármű csatlakoztatva",
+          "ev_connected_charging": "Töltés folyamatban",
+          "ev_connected_charging_ventilation": "Töltés folyamatban (szellőztetéssel)",
+          "diode_check_failed": "Dióda-ellenőrzési hiba",
+          "gfci_fault": "Szivárgóáram",
+          "no_ground": "Nem érzékelhető védőföld",
+          "stuck_relay": "Beragadt relé",
+          "gfi_self_test_failure": "Sikertelen szivárgóáram-teszt",
+          "over_temperature": "Túlmelegedés",
+          "over_current": "Túláram",
+          "i2c_bus_error": "Belső buszhiba",
+          "ev_fault": "Járműhiba",
+          "over_humidity": "Túl magas páratartalom",
+          "phase_misconnected": "Hibás fázisbekötés",
+          "overvoltage": "Túlfeszültség",
+          "undervoltage": "Alacsony feszültség",
+          "disabled": "Tiltva",
+          "booting": "Indítás",
+          "mid_meter_missing": "MID-mérő nem található",
+          "power_board_unknown": "Ismeretlen teljesítménypanel",
+          "waiting_for_timer": "Várakozás az időzítőre",
+          "shutdown": "Leállítva",
+          "undetermined": "Meghatározatlan",
+          "firmware_update": "Firmware-frissítés folyamatban",
+          "pe_n_fault": "Védőföld-nulla túlfeszültség",
+          "error": "Hiba"
+        }
+      },
+      "session_energy": {
+        "name": "Töltött energia"
+      },
+      "total_energy": {
+        "name": "Összes töltött energia"
+      },
+      "session_charge_time": {
+        "name": "Töltési idő"
+      },
+      "session_idle_time": {
+        "name": "Üresjárati idő"
+      },
+      "average_power": {
+        "name": "Átlagos teljesítmény"
+      },
+      "voltage_phase": {
+        "name": "Feszültség L{phase}"
+      },
+      "current_phase": {
+        "name": "Áram L{phase}"
+      },
+      "power_phase": {
+        "name": "Teljesítmény L{phase}"
+      },
+      "dlm_current_phase": {
+        "name": "Épületáram L{phase}"
+      },
+      "ipm_current_phase": {
+        "name": "IPM-áram L{phase}"
+      },
+      "api_version": {
+        "name": "API-verzió"
+      },
+      "rfid_list_count": {
+        "name": "Tárolt RFID-kulcsok"
+      },
+      "rfid_list_capacity": {
+        "name": "Tárolható RFID-kulcsok"
+      },
+      "rfid_learn_remaining": {
+        "name": "Hátralévő feltanítási idő"
+      },
+      "rfid_list_format_ver": {
+        "name": "RFID-lista formátumverziója"
+      },
+      "rfid_list_hash": {
+        "name": "RFID-lista ellenőrzőösszege"
+      }
+    },
+    "switch": {
+      "charging": {
+        "name": "Töltés engedélyezve"
+      },
+      "autostart": {
+        "name": "Automatikus indítás csatlakoztatáskor"
+      },
+      "display": {
+        "name": "Kijelző"
+      },
+      "front_led": {
+        "name": "Első LED"
+      },
+      "rear_led": {
+        "name": "Hátsó LED"
+      },
+      "buzzer": {
+        "name": "Hangjelzés"
+      },
+      "out_of_service": {
+        "name": "Üzemen kívül"
+      },
+      "force_single_phase": {
+        "name": "Egyfázisú töltés kényszerítése"
+      }
+    },
+    "select": {
+      "dlm_mode": {
+        "name": "DLM-mód",
+        "state": {
+          "off": "Ki",
+          "dynamic": "Dinamikus",
+          "eco": "Eco",
+          "green": "Zöld",
+          "grid_control": "Napelemes termelés védelme"
+        }
+      },
+      "access_mode": {
+        "name": "Hozzáférési mód",
+        "state": {
+          "home_charger": "Otthoni töltő",
+          "home_charger_rfid": "Otthoni töltő + RFID"
+        }
+      }
+    },
+    "number": {
+      "current_limit": {
+        "name": "Maximális töltőáram"
+      },
+      "dlm_current_limit": {
+        "name": "Épületáram-korlát"
+      },
+      "dlm_eco_startcurr": {
+        "name": "Eco mód minimális indítóárama"
+      },
+      "grid_u_stop": {
+        "name": "Termelésvédelem leállítási feszültsége"
+      },
+      "grid_u_min": {
+        "name": "Termelésvédelem minimális feszültsége"
+      },
+      "grid_u_max": {
+        "name": "Termelésvédelem maximális feszültsége"
+      },
+      "grid_t_up": {
+        "name": "Termelésvédelem áramnövelési késleltetése"
+      },
+      "grid_t_dn": {
+        "name": "Termelésvédelem áramcsökkentési késleltetése"
+      }
+    },
+    "button": {
+      "reboot": {
+        "name": "Töltő újraindítása"
+      },
+      "rfid_learn": {
+        "name": "RFID-feltanítás indítása"
+      },
+      "rfid_learn_cancel": {
+        "name": "RFID-feltanítás megszakítása"
+      }
+    },
+    "event": {
+      "charging_session": {
+        "name": "Töltési munkamenet",
+        "state_attributes": {
+          "event_type": {
+            "state": {
+              "session_finished": "Munkamenet befejeződött"
+            }
+          },
+          "cdr_id": {
+            "name": "Töltési rekord"
+          },
+          "session_start": {
+            "name": "Munkamenet kezdete"
+          },
+          "session_end": {
+            "name": "Munkamenet vége"
+          },
+          "energy_kwh": {
+            "name": "Energia"
+          },
+          "charge_time_s": {
+            "name": "Töltési idő"
+          },
+          "idle_time_s": {
+            "name": "Üresjárati idő"
+          },
+          "avg_power_kw": {
+            "name": "Átlagos teljesítmény"
+          },
+          "max_power_kw": {
+            "name": "Maximális teljesítmény"
+          },
+          "idtag_name": {
+            "name": "RFID-kulcs"
+          },
+          "closed_after_restart": {
+            "name": "Újraindítás zárta le"
+          }
+        }
+      }
+    }
+  },
+  "services": {
+    "display_text": {
+      "name": "Szöveg megjelenítése",
+      "description": "Szöveges üzenetet görget végig a töltő kijelzőjén.",
+      "fields": {
+        "message": {
+          "name": "Üzenet",
+          "description": "A kijelzőn végiggörgetett szöveg, 1 és 100 karakter között."
+        },
+        "repeat_count": {
+          "name": "Ismétlések száma",
+          "description": "Hányszor fusson végig az üzenet a kijelzőn. Alapértelmezés szerint egyszer."
+        },
+        "clear_first": {
+          "name": "Előbb törlés",
+          "description": "Azonnal megjeleníti ezt az üzenetet, és törli az éppen látható és a sorban álló üzeneteket."
+        }
+      }
+    },
+    "set_rear_led": {
+      "name": "Hátsó LED beállítása",
+      "description": "Egy időre beállítja a hátsó LED színét és fényerejét, utána a LED visszaáll az alapértelmezett színére.",
+      "fields": {
+        "brightness": {
+          "name": "Fényerő",
+          "description": "A LED fényereje 0 és 1 között. A 0 kikapcsolja a LED-et."
+        },
+        "color_rgb": {
+          "name": "Szín",
+          "description": "RGB szín hexadecimális formában, például #FF8800. A színcsatornák arányát adja meg, az erősséget a fényerő határozza meg."
+        },
+        "duration_sec": {
+          "name": "Időtartam",
+          "description": "Ennyi másodperc után áll vissza a LED az alapértelmezett színére. Alapértéke 3600, ez egyben a legnagyobb érték is. A 0-t a töltő a legnagyobb értékként kezeli, ezért a LED kikapcsolásához inkább 0 fényerőt adj meg."
+        }
+      }
+    },
+    "start_charging": {
+      "name": "Töltés indítása",
+      "description": "Töltést indít, és igény szerint RFID-kulcsot és nevet rögzít a töltési rekordban.",
+      "fields": {
+        "id_tag": {
+          "name": "RFID-kulcs azonosítója",
+          "description": "A töltéshez rögzítendő RFID-kulcs azonosítója, 8 és 20 karakter között."
+        },
+        "name": {
+          "name": "Név",
+          "description": "A töltéshez rögzítendő név, legfeljebb 30 karakter."
+        }
+      }
+    },
+    "add_rfid_tag": {
+      "name": "RFID-kulcs hozzáadása",
+      "description": "Új RFID-kulcsot vesz fel a töltőn tárolt listába. API v5 firmware szükséges hozzá.",
+      "fields": {
+        "id": {
+          "name": "Kulcsazonosító",
+          "description": "Az RFID-kulcs azonosítója hexadecimális formában, 8 és 20 karakter között (0-9, A-F)."
+        },
+        "name": {
+          "name": "Név",
+          "description": "A kulcs megjelenített neve, legfeljebb 30 karakter."
+        },
+        "enabled": {
+          "name": "Engedélyezve",
+          "description": "Indítható-e vele töltés. Alapértelmezés szerint igen."
+        },
+        "comment": {
+          "name": "Megjegyzés",
+          "description": "Szabad szöveges megjegyzés, legfeljebb 40 karakter."
+        }
+      }
+    },
+    "modify_rfid_tag": {
+      "name": "RFID-kulcs módosítása",
+      "description": "Módosít egy meglévő RFID-kulcsot. A kulcsot az azonosítója jelöli ki, ez nem módosítható. API v5 firmware szükséges hozzá.",
+      "fields": {
+        "id": {
+          "name": "Kulcsazonosító",
+          "description": "A módosítandó kulcs hexadecimális azonosítója."
+        },
+        "name": {
+          "name": "Név",
+          "description": "Új megjelenített név, legfeljebb 30 karakter."
+        },
+        "enabled": {
+          "name": "Engedélyezve",
+          "description": "Indítható-e vele töltés."
+        },
+        "comment": {
+          "name": "Megjegyzés",
+          "description": "Új szabad szöveges megjegyzés, legfeljebb 40 karakter."
+        }
+      }
+    },
+    "delete_rfid_tag": {
+      "name": "RFID-kulcs törlése",
+      "description": "Töröl egy RFID-kulcsot a töltőn tárolt listából. API v5 firmware szükséges hozzá.",
+      "fields": {
+        "id": {
+          "name": "Kulcsazonosító",
+          "description": "A törlendő kulcs hexadecimális azonosítója."
+        }
+      }
+    },
+    "start_rfid_learn": {
+      "name": "RFID-feltanítás indítása",
+      "description": "Feltanító módba állítja a töltőt, így a felmutatott kulcsok bekerülnek a tárolt listába. API v5 firmware szükséges hozzá.",
+      "fields": {
+        "timeout_sec": {
+          "name": "Időkorlát",
+          "description": "Ennyi másodpercig marad a töltő feltanító módban. Alapértéke 30."
+        },
+        "count_max": {
+          "name": "Kulcsok legnagyobb száma",
+          "description": "Ennyi kulcs feltanítása után leáll. 0 esetén nincs korlát."
+        }
+      }
+    },
+    "list_rfid_tags": {
+      "name": "RFID-kulcsok listázása",
+      "description": "Visszaadja a töltőn tárolt RFID-kulcsokat. API v5 firmware szükséges hozzá.",
+      "fields": {
+        "first_item": {
+          "name": "Első elem",
+          "description": "Az első visszaadott kulcs sorszáma, hosszú lista lapozásához."
+        },
+        "max_count": {
+          "name": "Legnagyobb darabszám",
+          "description": "Legfeljebb ennyi kulcsot ad vissza. 0 esetén az összeset."
+        }
+      }
+    }
+  },
+  "issues": {
+    "outdated_firmware": {
+      "title": "Régebbi firmware a töltőn: {name}",
+      "description": "A töltő ({name}) 5-ösnél régebbi HTTP API-verziót jelent, ezért az erre épülő funkciók, például az RFID-kulcsok kezelése, nem érhetők el. A töltők a Voltie felhőből automatikusan frissítik a firmware-t, ezért hagyd a töltőt az internetre csatlakoztatva. Ez az üzenet magától eltűnik, amint a töltő újabb firmware-t futtat."
+    },
+    "unauthenticated_api": {
+      "title": "Jelszó nélkül elérhető HTTP API: {name}",
+      "description": "A helyi hálózaton bárki olvashatja és vezérelheti a töltőt ({name}) a HTTP API-n keresztül. Állíts be felhasználónevet és jelszót a HTTP API-hoz a Voltie mobilalkalmazásban; ha kell, a Home Assistant ezután elkéri őket, és ez az üzenet magától eltűnik. Ha a töltő olyan hálózaton van, amelyet csak te felügyelsz, ezt az üzenetet figyelmen kívül hagyhatod."
+    }
+  }
+}
