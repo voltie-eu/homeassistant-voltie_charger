@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from math import isfinite
 from typing import Any
 
 from homeassistant.components.sensor import (
@@ -48,6 +49,22 @@ def _status(data: dict[str, Any]) -> dict[str, Any]:
 def _cdr(data: dict[str, Any]) -> dict[str, Any]:
     cdr = _status(data).get("cdr")
     return cdr if isinstance(cdr, dict) else {}
+
+
+def _session_energy(data: dict[str, Any]) -> int | float | None:
+    """Keep an idle charger numeric so Recorder retains the running sum.
+
+    The API explicitly returns cdr=null when no session exists. Reporting
+    unknown for weeks lets Recorder purge the last short-term sum and start
+    again from zero. Only treat a confirmed disconnected, empty session as
+    zero; missing/malformed data and connection failures remain unknown or
+    unavailable. A real new session still uses the charger's measured energy.
+    """
+    status = _status(data)
+    if "cdr" in status and status["cdr"] is None and status.get("evse_state") == 1:
+        return 0
+    value = _numeric(_cdr(data).get("chg_energy"))
+    return value if value is not None and isfinite(value) and value >= 0 else None
 
 
 def _power_stat(data: dict[str, Any]) -> dict[str, Any]:
@@ -177,7 +194,7 @@ SENSORS: tuple[VoltieSensorDescription, ...] = (
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         state_class=SensorStateClass.TOTAL_INCREASING,
         suggested_display_precision=3,
-        value_fn=lambda d: _cdr(d).get("chg_energy"),
+        value_fn=_session_energy,
         # CDR metadata surfaced for UI cards rendering the per-period breakdown.
         attributes_fn=lambda d: {
             "session_start": _cdr(d).get("s_start"),
