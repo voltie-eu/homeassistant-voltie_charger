@@ -319,6 +319,10 @@
       "name": "Display text",
       "description": "Scrolls a text message across the charger's display.",
       "fields": {
+        "device_id": {
+          "name": "Charger",
+          "description": "The Voltie charger to show the message on."
+        },
         "message": {
           "name": "Message",
           "description": "Text to scroll across the display (1-100 characters)."
@@ -337,6 +341,10 @@
       "name": "Set rear LED",
       "description": "Sets the rear LED colour and brightness for a period, after which it reverts to its default colour.",
       "fields": {
+        "device_id": {
+          "name": "Charger",
+          "description": "The Voltie charger to set the LED of."
+        },
         "brightness": {
           "name": "Brightness",
           "description": "LED intensity from 0.0 to 1.0. Zero turns the LED off."
@@ -355,6 +363,10 @@
       "name": "Start charging",
       "description": "Starts a charging session, optionally recording an RFID tag and name in the charging record.",
       "fields": {
+        "device_id": {
+          "name": "Charger",
+          "description": "The Voltie charger to start charging on."
+        },
         "id_tag": {
           "name": "RFID tag ID",
           "description": "RFID tag ID to record against the session (8-20 characters)."
@@ -369,6 +381,10 @@
       "name": "Add RFID tag",
       "description": "Adds a new RFID tag to the charger's stored tag list. Requires API v5 firmware.",
       "fields": {
+        "device_id": {
+          "name": "Charger",
+          "description": "The Voltie charger to add the tag to."
+        },
         "id": {
           "name": "Tag ID",
           "description": "RFID tag ID as a hexadecimal value, 8 to 20 characters (0-9, A-F)."
@@ -391,6 +407,10 @@
       "name": "Modify RFID tag",
       "description": "Changes an existing RFID tag. The tag ID identifies the tag and cannot be changed. Requires API v5 firmware.",
       "fields": {
+        "device_id": {
+          "name": "Charger",
+          "description": "The Voltie charger that stores the tag."
+        },
         "id": {
           "name": "Tag ID",
           "description": "Hexadecimal ID of the existing tag to modify."
@@ -413,6 +433,10 @@
       "name": "Delete RFID tag",
       "description": "Removes an RFID tag from the charger's stored tag list. Requires API v5 firmware.",
       "fields": {
+        "device_id": {
+          "name": "Charger",
+          "description": "The Voltie charger to remove the tag from."
+        },
         "id": {
           "name": "Tag ID",
           "description": "Hexadecimal ID of the tag to delete."
@@ -423,6 +447,10 @@
       "name": "Start RFID learn mode",
       "description": "Puts the charger into RFID learn mode so presented tags are added to its stored list. Requires API v5 firmware.",
       "fields": {
+        "device_id": {
+          "name": "Charger",
+          "description": "The Voltie charger to put in learn mode."
+        },
         "timeout_sec": {
           "name": "Timeout",
           "description": "Seconds to stay in learn mode. Defaults to 30."
@@ -437,6 +465,10 @@
       "name": "List RFID tags",
       "description": "Returns the RFID tags stored on the charger. Requires API v5 firmware.",
       "fields": {
+        "device_id": {
+          "name": "Charger",
+          "description": "The Voltie charger to list the tags of."
+        },
         "first_item": {
           "name": "First item",
           "description": "Index of the first tag to return, for paging through a long list."

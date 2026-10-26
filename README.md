@@ -75,6 +75,8 @@ Each tag has `tag_id` and `last_used` (a date) instead of `id` and `last_use`.
      the device's name. The built-in integration names the device after it.
    - Every entry stores its port, as the built-in integration needs it.
    - The actions no longer use a call Home Assistant 2026.10 deprecated.
+   - Actions pick the charger in a Charger field, as in the built-in
+     integration. Automations that use a target keep working.
 4. Fixes:
    - Adding a charger by hand works while its discovery is offered.
      It failed with "already in progress".

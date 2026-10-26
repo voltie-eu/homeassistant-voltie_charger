@@ -1,8 +1,10 @@
 display_text:
-  target:
-    device:
-      integration: voltie_charger
   fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: voltie_charger
     message:
       required: true
       selector:
@@ -18,10 +20,12 @@ display_text:
         boolean:
 
 set_rear_led:
-  target:
-    device:
-      integration: voltie_charger
   fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: voltie_charger
     brightness:
       required: true
       selector:
@@ -44,10 +48,12 @@ set_rear_led:
           mode: box
 
 start_charging:
-  target:
-    device:
-      integration: voltie_charger
   fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: voltie_charger
     id_tag:
       selector:
         text:
@@ -56,10 +62,12 @@ start_charging:
         text:
 
 add_rfid_tag:
-  target:
-    device:
-      integration: voltie_charger
   fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: voltie_charger
     id:
       required: true
       selector:
@@ -75,10 +83,12 @@ add_rfid_tag:
         text:
 
 modify_rfid_tag:
-  target:
-    device:
-      integration: voltie_charger
   fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: voltie_charger
     id:
       required: true
       selector:
@@ -94,20 +104,24 @@ modify_rfid_tag:
         text:
 
 delete_rfid_tag:
-  target:
-    device:
-      integration: voltie_charger
   fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: voltie_charger
     id:
       required: true
       selector:
         text:
 
 start_rfid_learn:
-  target:
-    device:
-      integration: voltie_charger
   fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: voltie_charger
     timeout_sec:
       selector:
         number:
@@ -122,10 +136,12 @@ start_rfid_learn:
           mode: box
 
 list_rfid_tags:
-  target:
-    device:
-      integration: voltie_charger
   fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: voltie_charger
     first_item:
       selector:
         number:
