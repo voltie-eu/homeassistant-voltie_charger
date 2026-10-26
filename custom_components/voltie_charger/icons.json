@@ -1,62 +1,29 @@
 {
   "entity": {
     "sensor": {
-      "mains_voltage": {
+      "phases": {
         "default": "mdi:sine-wave"
       },
-      "phases": {
-        "default": "mdi:lightning-bolt-outline"
-      },
       "phases_used": {
-        "default": "mdi:flash-outline"
+        "default": "mdi:sine-wave"
       },
       "current_hw_limit": {
         "default": "mdi:gauge-full"
       },
-      "current_offered": {
-        "default": "mdi:current-ac"
-      },
-      "charge_current": {
-        "default": "mdi:current-ac"
-      },
-      "charge_power": {
-        "default": "mdi:flash"
-      },
       "evse_state": {
-        "default": "mdi:ev-station"
-      },
-      "session_energy": {
-        "default": "mdi:battery-charging"
-      },
-      "total_energy": {
-        "default": "mdi:counter"
-      },
-      "session_charge_time": {
-        "default": "mdi:timer-outline"
+        "default": "mdi:ev-station",
+        "state": {
+          "ev_connected_charging": "mdi:battery-charging",
+          "ev_connected_charging_ventilation": "mdi:battery-charging",
+          "ev_connected_not_charging": "mdi:ev-plug-type2",
+          "ev_not_connected": "mdi:power-plug-off-outline"
+        }
       },
       "session_idle_time": {
         "default": "mdi:timer-sand"
       },
       "average_power": {
         "default": "mdi:chart-line"
-      },
-      "voltage_phase": {
-        "default": "mdi:sine-wave"
-      },
-      "current_phase": {
-        "default": "mdi:current-ac"
-      },
-      "power_phase": {
-        "default": "mdi:flash"
-      },
-      "dlm_current_phase": {
-        "default": "mdi:current-ac"
-      },
-      "ipm_current_phase": {
-        "default": "mdi:current-ac"
-      },
-      "api_version": {
-        "default": "mdi:api"
       },
       "rfid_list_count": {
         "default": "mdi:card-account-details-outline"
@@ -66,12 +33,6 @@
       },
       "rfid_learn_remaining": {
         "default": "mdi:timer-sand"
-      },
-      "rfid_list_format_ver": {
-        "default": "mdi:file-code-outline"
-      },
-      "rfid_list_hash": {
-        "default": "mdi:pound"
       }
     },
     "switch": {
@@ -82,16 +43,28 @@
         "default": "mdi:play-circle-outline"
       },
       "display": {
-        "default": "mdi:monitor"
+        "default": "mdi:monitor",
+        "state": {
+          "off": "mdi:monitor-off"
+        }
       },
       "front_led": {
-        "default": "mdi:led-on"
+        "default": "mdi:led-on",
+        "state": {
+          "off": "mdi:led-off"
+        }
       },
       "rear_led": {
-        "default": "mdi:led-on"
+        "default": "mdi:led-on",
+        "state": {
+          "off": "mdi:led-off"
+        }
       },
       "buzzer": {
-        "default": "mdi:volume-high"
+        "default": "mdi:volume-high",
+        "state": {
+          "off": "mdi:volume-off"
+        }
       },
       "out_of_service": {
         "default": "mdi:wrench-clock"
@@ -102,16 +75,24 @@
     },
     "select": {
       "dlm_mode": {
-        "default": "mdi:transmission-tower"
+        "default": "mdi:transmission-tower",
+        "state": {
+          "dynamic": "mdi:home-lightning-bolt-outline",
+          "eco": "mdi:leaf",
+          "green": "mdi:solar-power-variant-outline",
+          "grid_control": "mdi:transmission-tower",
+          "off": "mdi:power-plug-outline"
+        }
       },
       "access_mode": {
-        "default": "mdi:account-key-outline"
+        "default": "mdi:account-key-outline",
+        "state": {
+          "home_charger": "mdi:lock-open-variant-outline",
+          "home_charger_rfid": "mdi:card-account-details-outline"
+        }
       }
     },
     "number": {
-      "current_limit": {
-        "default": "mdi:current-ac"
-      },
       "dlm_current_limit": {
         "default": "mdi:home-lightning-bolt-outline"
       },
@@ -135,32 +116,23 @@
       }
     },
     "binary_sensor": {
-      "problem": {
-        "default": "mdi:check-circle-outline",
-        "state": {
-          "on": "mdi:alert-circle"
-        }
-      },
       "dlm_valid": {
-        "default": "mdi:check-network-outline"
+        "default": "mdi:home-lightning-bolt-outline"
       },
       "ipm_valid": {
-        "default": "mdi:check-network-outline"
+        "default": "mdi:home-lightning-bolt-outline"
       },
       "rfid_reader_enabled": {
-        "default": "mdi:nfc"
+        "default": "mdi:nfc-variant",
+        "state": {
+          "off": "mdi:nfc-variant-off"
+        }
       },
       "rfid_reader_working": {
         "default": "mdi:nfc-search-variant"
-      },
-      "rfid_learn_in_progress": {
-        "default": "mdi:school-outline"
       }
     },
     "button": {
-      "reboot": {
-        "default": "mdi:restart"
-      },
       "rfid_learn": {
         "default": "mdi:card-plus-outline"
       },

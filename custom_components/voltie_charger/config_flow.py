@@ -1,4 +1,4 @@
-"""Config and options flow for the Voltie Charger integration."""
+"""Config flow for the Voltie Charger integration."""
 from __future__ import annotations
 
 import logging
@@ -6,32 +6,20 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.config_entries import (
-    ConfigEntry,
-    ConfigFlow,
-    ConfigFlowResult,
-    OptionsFlow,
-)
+from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, CONF_USERNAME
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
+from . import entry_title
 from .client import (
     VoltieChargerAuthError,
     VoltieChargerClient,
     VoltieChargerConnectionError,
 )
-from .const import (
-    API_PORT,
-    CONF_SCAN_INTERVAL,
-    DEFAULT_SCAN_INTERVAL,
-    DOMAIN,
-    MAX_SCAN_INTERVAL,
-    MDNS_NAME_RE,
-    MIN_SCAN_INTERVAL,
-)
+from .const import API_PORT, DOMAIN, MDNS_NAME_RE
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -54,7 +42,7 @@ async def _validate(
     username = (data.get(CONF_USERNAME) or "").strip()
     password = data.get(CONF_PASSWORD) or ""
 
-    # Reject half-filled credentials — users otherwise silently get no-auth.
+    # Reject half-filled credentials: users otherwise silently get no auth.
     if bool(username) != bool(password):
         return "", {"base": "incomplete_credentials"}
 
@@ -102,13 +90,15 @@ class VoltieChargerConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             charger_id, errors = await _validate(self.hass, user_input)
             if not errors:
-                await self.async_set_unique_id(charger_id)
+                # Takes over from a discovery of the same charger in progress
+                await self.async_set_unique_id(charger_id, raise_on_progress=False)
                 self._abort_if_unique_id_configured()
+                self._abort_discovery_of(charger_id)
                 self.context["title_placeholders"] = {
                     "name": f"Voltie Charger {charger_id[-4:].lower()}",
                 }
                 return self.async_create_entry(
-                    title=f"Voltie Charger ({user_input[CONF_HOST]})",
+                    title=entry_title(charger_id),
                     data=user_input,
                 )
 
@@ -247,6 +237,21 @@ class VoltieChargerConfigFlow(ConfigFlow, domain=DOMAIN):
         }
         return await self.async_step_zeroconf_confirm()
 
+    @callback
+    def _abort_discovery_of(self, charger_id: str) -> None:
+        """Drop the discovery of a charger that is being added by hand.
+
+        A discovery that could not read the charger ID (password or HTTP API
+        off) is keyed by the mDNS name, so Home Assistant does not drop it
+        when the entry is created, and its card would stay.
+        """
+        suffix = charger_id[-4:].lower()
+        for flow in self._async_in_progress():
+            unique_id = flow["context"].get("unique_id") or ""
+            match = MDNS_NAME_RE.match(unique_id.removeprefix("mdns_"))
+            if match and match.group(1).lower() == suffix:
+                self.hass.config_entries.flow.async_abort(flow["flow_id"])
+
     def _existing_entry_abort(
         self, discovery_info: ZeroconfServiceInfo, host: str, mdns_name: str
     ) -> ConfigFlowResult | None:
@@ -322,11 +327,13 @@ class VoltieChargerConfigFlow(ConfigFlow, domain=DOMAIN):
     ) -> ConfigFlowResult:
         """Ask the user to confirm adding a discovered charger."""
         assert self._discovered_host is not None
+        assert self._discovered_charger_id is not None
         if user_input is not None:
             return self.async_create_entry(
-                title=f"Voltie Charger ({self._discovered_host})",
+                title=entry_title(self._discovered_charger_id),
                 data={
                     CONF_HOST: self._discovered_host,
+                    CONF_PORT: API_PORT,
                     CONF_USERNAME: "",
                     CONF_PASSWORD: "",
                 },
@@ -345,7 +352,11 @@ class VoltieChargerConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            data = {CONF_HOST: self._discovered_host, **user_input}
+            data = {
+                CONF_HOST: self._discovered_host,
+                CONF_PORT: API_PORT,
+                **user_input,
+            }
             charger_id, errors = await _validate(self.hass, data)
             if not errors:
                 await self.async_set_unique_id(charger_id, raise_on_progress=False)
@@ -354,7 +365,7 @@ class VoltieChargerConfigFlow(ConfigFlow, domain=DOMAIN):
                     reload_on_update=True,
                 )
                 return self.async_create_entry(
-                    title=f"Voltie Charger ({self._discovered_host})",
+                    title=entry_title(charger_id),
                     data=data,
                 )
 
@@ -369,31 +380,3 @@ class VoltieChargerConfigFlow(ConfigFlow, domain=DOMAIN):
             description_placeholders={"host": self._discovered_host},
             errors=errors,
         )
-
-    @staticmethod
-    @callback
-    def async_get_options_flow(entry: ConfigEntry) -> OptionsFlow:
-        return VoltieChargerOptionsFlow()
-
-
-class VoltieChargerOptionsFlow(OptionsFlow):
-    """Options flow — currently just the poll interval."""
-
-    async def async_step_init(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        if user_input is not None:
-            return self.async_create_entry(data=user_input)
-
-        current = self.config_entry.options.get(
-            CONF_SCAN_INTERVAL, int(DEFAULT_SCAN_INTERVAL.total_seconds())
-        )
-        schema = vol.Schema(
-            {
-                vol.Required(CONF_SCAN_INTERVAL, default=current): vol.All(
-                    vol.Coerce(int),
-                    vol.Range(min=MIN_SCAN_INTERVAL, max=MAX_SCAN_INTERVAL),
-                ),
-            }
-        )
-        return self.async_show_form(step_id="init", data_schema=schema)

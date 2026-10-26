@@ -28,7 +28,6 @@ from .const import (
     DATA_POWER,
     DATA_RFID_STATUS,
     DATA_STATUS,
-    EVSE_STATE_ERROR,
     EVSE_STATES,
     STATUS_METER_KWH,
 )
@@ -37,10 +36,9 @@ from .entity import VoltieChargerEntity, VoltieChargerRfidEntity
 
 @dataclass(frozen=True, kw_only=True)
 class VoltieSensorDescription(SensorEntityDescription):
-    """Sensor description with a value accessor and optional attributes."""
+    """Sensor description with a value accessor."""
 
     value_fn: Callable[[dict[str, Any]], Any]
-    attributes_fn: Callable[[dict[str, Any]], dict[str, Any] | None] | None = None
 
 
 def _status(data: dict[str, Any]) -> dict[str, Any]:
@@ -92,8 +90,8 @@ def _rfid(data: dict[str, Any]) -> dict[str, Any]:
 def _numeric(value: Any) -> int | float | None:
     """Return the value only if HA can put it in a numeric state.
 
-    Anything else — a string, a dict, or a bool, which is an int in Python but
-    renders as "True" — would raise inside SensorEntity.state on a sensor with a
+    Anything else (a string, a dict, or a bool, which is an int in Python but
+    renders as "True") would raise inside SensorEntity.state on a sensor with a
     device_class or state_class. That exception propagates out of the
     coordinator's listener dispatch and stops every entity after it updating, so
     one bad field would freeze half the device.
@@ -115,15 +113,18 @@ def _phases_value(data: dict[str, Any]) -> str | None:
     return str(int(value))
 
 
-def _evse_state(data: dict[str, Any]) -> str:
-    # Missing field → unknown (not error); avoids false-positive fault UI.
+def _evse_state(data: dict[str, Any]) -> str | None:
+    """The EVSE state, unknown when it has no option.
+
+    That covers a missing or malformed field, state 0 (before the first valid
+    EVSE reading) and codes newer firmware may add. The problem binary sensor
+    still reports a fault for an unrecognised code.
+    """
     raw = _status(data).get("evse_state")
-    if raw is None:
-        return EVSE_STATES[0]
     if isinstance(raw, bool) or not isinstance(raw, int):
         # An unhashable or non-integer code would raise in dict.get().
-        return EVSE_STATE_ERROR
-    return EVSE_STATES.get(raw, EVSE_STATE_ERROR)
+        return None
+    return EVSE_STATES.get(raw)
 
 
 SENSORS: tuple[VoltieSensorDescription, ...] = (
@@ -131,6 +132,7 @@ SENSORS: tuple[VoltieSensorDescription, ...] = (
         key="mains_voltage",
         translation_key="mains_voltage",
         device_class=SensorDeviceClass.VOLTAGE,
+        entity_category=EntityCategory.DIAGNOSTIC,
         native_unit_of_measurement=UnitOfElectricPotential.VOLT,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
@@ -140,6 +142,7 @@ SENSORS: tuple[VoltieSensorDescription, ...] = (
         key="phases",
         translation_key="phases",
         device_class=SensorDeviceClass.ENUM,
+        entity_category=EntityCategory.DIAGNOSTIC,
         options=["1", "3"],
         value_fn=_phases_value,
     ),
@@ -149,7 +152,7 @@ SENSORS: tuple[VoltieSensorDescription, ...] = (
         # Phases in the *current session* (0 when idle). Kept a plain numeric
         # sensor rather than an enum like "phases": the spec does not enumerate
         # the possible values, and an ENUM sensor logs an error for anything
-        # outside options. No state_class — averaging a 0/1/3 phase count over
+        # outside options. No state_class: averaging a 0/1/3 phase count over
         # an hour is not a meaningful statistic.
         value_fn=lambda d: _numeric(_status(d).get("phases_used")),
     ),
@@ -159,6 +162,7 @@ SENSORS: tuple[VoltieSensorDescription, ...] = (
         device_class=SensorDeviceClass.CURRENT,
         native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
         state_class=SensorStateClass.MEASUREMENT,
+        suggested_display_precision=0,
         value_fn=lambda d: _status(d).get("current_offered"),
     ),
     VoltieSensorDescription(
@@ -179,7 +183,7 @@ SENSORS: tuple[VoltieSensorDescription, ...] = (
         device_class=SensorDeviceClass.CURRENT,
         native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
         state_class=SensorStateClass.MEASUREMENT,
-        suggested_display_precision=2,
+        suggested_display_precision=1,
         value_fn=lambda d: _status(d).get("charge_current"),
     ),
     VoltieSensorDescription(
@@ -195,10 +199,8 @@ SENSORS: tuple[VoltieSensorDescription, ...] = (
         key="evse_state",
         translation_key="evse_state",
         device_class=SensorDeviceClass.ENUM,
-        entity_category=EntityCategory.DIAGNOSTIC,
-        options=[*EVSE_STATES.values(), EVSE_STATE_ERROR],
+        options=list(EVSE_STATES.values()),
         value_fn=_evse_state,
-        attributes_fn=lambda d: {"raw_code": _status(d).get("evse_state")},
     ),
     VoltieSensorDescription(
         key="session_energy",
@@ -206,20 +208,16 @@ SENSORS: tuple[VoltieSensorDescription, ...] = (
         device_class=SensorDeviceClass.ENERGY,
         native_unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         state_class=SensorStateClass.TOTAL_INCREASING,
-        suggested_display_precision=3,
+        suggested_display_precision=2,
         value_fn=_session_energy,
-        # CDR metadata surfaced for UI cards rendering the per-period breakdown.
-        attributes_fn=lambda d: {
-            "session_start": _cdr(d).get("s_start"),
-            "periods": _cdr(d).get("periods"),
-        },
     ),
     VoltieSensorDescription(
         key="session_charge_time",
         translation_key="session_charge_time",
         device_class=SensorDeviceClass.DURATION,
         native_unit_of_measurement=UnitOfTime.SECONDS,
-        # Per-session value, so MEASUREMENT — long-term stats get per-session mean/max.
+        # Per-session value, so MEASUREMENT: long-term stats get per-session
+        # mean/max. No suggested unit: the card reads the state as seconds.
         state_class=SensorStateClass.MEASUREMENT,
         value_fn=lambda d: _cdr(d).get("chg_time"),
     ),
@@ -284,22 +282,6 @@ RFID_SENSORS: tuple[VoltieSensorDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         value_fn=lambda d: _numeric(_rfid(d).get("learn_to_sec")),
     ),
-    VoltieSensorDescription(
-        key="rfid_list_format_ver",
-        translation_key="rfid_list_format_ver",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
-        value_fn=lambda d: _numeric(_rfid(d).get("list_format_ver")),
-    ),
-    VoltieSensorDescription(
-        key="rfid_list_hash",
-        translation_key="rfid_list_hash",
-        entity_category=EntityCategory.DIAGNOSTIC,
-        entity_registry_enabled_default=False,
-        # 8 hex digits, not a number — a device_class or state_class here would
-        # make the recorder try to coerce it.
-        value_fn=lambda d: _rfid(d).get("list_hash"),
-    ),
 )
 
 
@@ -315,6 +297,8 @@ def _per_phase_sensors() -> tuple[VoltieSensorDescription, ...]:
                     device_class=SensorDeviceClass.VOLTAGE,
                     native_unit_of_measurement=UnitOfElectricPotential.VOLT,
                     state_class=SensorStateClass.MEASUREMENT,
+                    entity_category=EntityCategory.DIAGNOSTIC,
+                    entity_registry_enabled_default=False,
                     suggested_display_precision=1,
                     value_fn=lambda d, p=phase: _power_stat(d).get(f"voltage{p}"),
                 ),
@@ -325,7 +309,9 @@ def _per_phase_sensors() -> tuple[VoltieSensorDescription, ...]:
                     device_class=SensorDeviceClass.CURRENT,
                     native_unit_of_measurement=UnitOfElectricCurrent.AMPERE,
                     state_class=SensorStateClass.MEASUREMENT,
-                    suggested_display_precision=2,
+                    entity_category=EntityCategory.DIAGNOSTIC,
+                    entity_registry_enabled_default=False,
+                    suggested_display_precision=1,
                     value_fn=lambda d, p=phase: _power_stat(d).get(f"current{p}"),
                 ),
                 VoltieSensorDescription(
@@ -335,6 +321,8 @@ def _per_phase_sensors() -> tuple[VoltieSensorDescription, ...]:
                     device_class=SensorDeviceClass.POWER,
                     native_unit_of_measurement=UnitOfPower.KILO_WATT,
                     state_class=SensorStateClass.MEASUREMENT,
+                    entity_category=EntityCategory.DIAGNOSTIC,
+                    entity_registry_enabled_default=False,
                     suggested_display_precision=2,
                     value_fn=lambda d, p=phase: _power_stat(d).get(f"power{p}"),
                 ),
@@ -347,7 +335,7 @@ def _per_phase_sensors() -> tuple[VoltieSensorDescription, ...]:
                     state_class=SensorStateClass.MEASUREMENT,
                     entity_category=EntityCategory.DIAGNOSTIC,
                     entity_registry_enabled_default=False,
-                    suggested_display_precision=2,
+                    suggested_display_precision=1,
                     value_fn=lambda d, p=phase: _power_stat(d).get(f"dlm_current{p}"),
                 ),
                 VoltieSensorDescription(
@@ -359,7 +347,7 @@ def _per_phase_sensors() -> tuple[VoltieSensorDescription, ...]:
                     state_class=SensorStateClass.MEASUREMENT,
                     entity_category=EntityCategory.DIAGNOSTIC,
                     entity_registry_enabled_default=False,
-                    suggested_display_precision=2,
+                    suggested_display_precision=1,
                     value_fn=lambda d, p=phase: _power_stat(d).get(f"ipm_current{p}"),
                 ),
             )
@@ -381,7 +369,6 @@ async def async_setup_entry(
         VoltieChargerSensor(coordinator, description)
         for description in (*SENSORS, *PER_PHASE_SENSORS)
     ]
-    entities.append(VoltieChargerApiVersionSensor(coordinator))
     if STATUS_METER_KWH in (coordinator.data or {}).get(DATA_STATUS, {}):
         entities.extend(
             VoltieChargerSensor(coordinator, description)
@@ -414,13 +401,6 @@ class VoltieChargerSensor(VoltieChargerEntity, SensorEntity):
     def native_value(self) -> Any:
         return self.entity_description.value_fn(self.coordinator.data or {})
 
-    @property
-    def extra_state_attributes(self) -> dict[str, Any] | None:
-        fn = self.entity_description.attributes_fn
-        if fn is None:
-            return None
-        return fn(self.coordinator.data or {})
-
 
 class VoltieChargerRfidSensor(VoltieChargerRfidEntity, SensorEntity):
     """A sensor backed by /rfid/status, which only exists on API v5 firmware."""
@@ -438,28 +418,3 @@ class VoltieChargerRfidSensor(VoltieChargerRfidEntity, SensorEntity):
     @property
     def native_value(self) -> Any:
         return self.entity_description.value_fn(self.coordinator.data or {})
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any] | None:
-        fn = self.entity_description.attributes_fn
-        if fn is None:
-            return None
-        return fn(self.coordinator.data or {})
-
-
-class VoltieChargerApiVersionSensor(VoltieChargerEntity, SensorEntity):
-    """The charger's major API version.
-
-    Needs its own class rather than a description: /apiver is probed once during
-    setup and lives on the coordinator, not in its polled data.
-    """
-
-    _attr_translation_key = "api_version"
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-
-    def __init__(self, coordinator: VoltieChargerCoordinator) -> None:
-        super().__init__(coordinator, "api_version")
-
-    @property
-    def native_value(self) -> int | None:
-        return self.coordinator.api_version

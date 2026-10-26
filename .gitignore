@@ -1,0 +1,18 @@
+# This folder is published as its own GitHub repository, where the monorepo's
+# root .gitignore does not apply.
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# Test and lint caches
+.pytest_cache/
+.ruff_cache/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

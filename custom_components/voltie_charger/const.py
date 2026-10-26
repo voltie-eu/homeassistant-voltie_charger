@@ -47,11 +47,9 @@ ENDPOINT_RFID = "rfid"
 ENDPOINT_RFID_STATUS = "rfid/status"
 ENDPOINT_RFID_EXTRAS = "rfid/extras"
 
-DEFAULT_SCAN_INTERVAL = timedelta(seconds=30)
-MIN_SCAN_INTERVAL = 5
-MAX_SCAN_INTERVAL = 300
-
-CONF_SCAN_INTERVAL = "scan_interval"
+# Fixed, as in the built-in integration: Home Assistant's own "Defining a
+# custom polling interval" covers anyone who needs faster updates.
+SCAN_INTERVAL = timedelta(seconds=30)
 
 DATA_STATUS = "status"
 DATA_POWER = "power"
@@ -64,14 +62,20 @@ DATA_RFID_STATUS = "rfid_status"
 # firmware yet, so everything that reads it copes with its absence.
 STATUS_METER_KWH = "meter_kwh"
 
-# Oldest HTTP API major version with every feature this integration offers.
-MIN_FULL_API_VERSION = 5
+# Repair issues raised by v0.4.0, deleted at setup since v0.5.0. Their IDs
+# add the config entry ID.
+LEGACY_ISSUES = ("outdated_firmware", "unauthenticated_api")
 
-# Repair issue translation keys; issue IDs add the config entry ID.
-ISSUE_OUTDATED_FIRMWARE = "outdated_firmware"
-ISSUE_UNAUTHENTICATED_API = "unauthenticated_api"
-# How often to look again whether the HTTP API still answers anonymously.
-AUTH_RECHECK_INTERVAL = timedelta(hours=1)
+# Entity unique IDs are "{charger_id}_{key}", the built-in integration's
+# format. Earlier releases put this prefix in front of the key and the charger
+# ID (v0.4.0) or the config entry ID (v0.3.0 and older) after it.
+LEGACY_UNIQUE_ID_PREFIX = f"{DOMAIN}_"
+# Keys renamed since: old key -> current key.
+RENAMED_ENTITY_KEYS = {"switch": "charging"}
+# Debug-only sensors dropped in v0.5.0. Their values stay in diagnostics.
+REMOVED_ENTITY_KEYS = frozenset(
+    {"api_version", "rfid_list_format_ver", "rfid_list_hash"}
+)
 
 # Charging-session tracking, persisted so a session that ends while Home
 # Assistant is down is still reported once it is back.
@@ -187,10 +191,10 @@ ATTR_COUNT_MAX = "count_max"
 # Values mirror the charger firmware's internal EVSE state enum (voltie-rpi
 # evse_state.h), which is more detailed than the documented set in spec
 # appendix 5.1. State 4 (charging with ventilation) is obsolete but still
-# documented as a valid charging state, so it is mapped rather than left to
-# fall through to "error".
+# documented as a valid charging state, so it is mapped. State 0, reported
+# before the first valid EVSE reading, and codes newer firmware may add have
+# no option: the sensor reads unknown for them, as the built-in one does.
 EVSE_STATES: dict[int, str] = {
-    0: "unknown",
     1: "ev_not_connected",
     2: "ev_connected_not_charging",
     3: "ev_connected_charging",
@@ -213,13 +217,12 @@ EVSE_STATES: dict[int, str] = {
     19: "booting",
     20: "mid_meter_missing",
     21: "power_board_unknown",
-    22: "waiting_for_timer",
+    22: "sleeping",
     23: "shutdown",
     24: "undetermined",
     25: "firmware_update",
     26: "pe_n_fault",
 }
-EVSE_STATE_ERROR = "error"
 
 # States that are not a problem. Everything else, including codes newer
 # firmware may add, is. Unlike the firmware, which only counts faults of the

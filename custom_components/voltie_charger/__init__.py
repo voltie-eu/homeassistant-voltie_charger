@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timedelta
 import logging
+import re
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -18,7 +18,6 @@ from homeassistant.helpers import (
 )
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -32,19 +31,18 @@ from .client import (
 )
 from .const import (
     API_PORT,
-    AUTH_RECHECK_INTERVAL,
-    CONF_SCAN_INTERVAL,
     CONFIG_REPROBE_EVERY,
     DATA_CONFIG,
     DATA_POWER,
     DATA_RFID_STATUS,
     DATA_STATUS,
-    DEFAULT_SCAN_INTERVAL,
     DOMAIN,
-    ISSUE_OUTDATED_FIRMWARE,
-    ISSUE_UNAUTHENTICATED_API,
-    MIN_FULL_API_VERSION,
+    LEGACY_ISSUES,
+    LEGACY_UNIQUE_ID_PREFIX,
     PLATFORMS,
+    REMOVED_ENTITY_KEYS,
+    RENAMED_ENTITY_KEYS,
+    SCAN_INTERVAL,
     UPDATE_RETRY_BACKOFF_S,
     UPDATE_RETRY_COUNT,
 )
@@ -83,7 +81,7 @@ class _SoftFailProbe:
         self.label = label
         self.carry_forward = carry_forward
         # True once the charger has told us it does not implement this at all
-        # (HTTP 404/405 or error_code 24) — as opposed to a transient failure.
+        # (HTTP 404/405 or error_code 24), as opposed to a transient failure.
         self.unsupported = False
         self._polls_since_failure = 0
         self._logged_failure = False
@@ -127,10 +125,8 @@ class VoltieChargerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     ) -> None:
         self.client = client
         self.entry = entry
+        # Read once at setup, for diagnostics.
         self.api_version: int | None = None
-        # True once the charger has answered /apiver with "no such endpoint",
-        # which only firmware predating it does.
-        self.api_version_unsupported = False
         self.session_tracker = SessionTracker(hass, entry.entry_id)
         # The last session that ended, for the event entity to report once.
         self.finished_session: dict[str, Any] | None = None
@@ -149,7 +145,7 @@ class VoltieChargerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER,
             config_entry=entry,
             name=DOMAIN,
-            update_interval=_scan_interval(entry),
+            update_interval=SCAN_INTERVAL,
         )
 
     @property
@@ -212,22 +208,6 @@ class VoltieChargerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             DATA_RFID_STATUS: rfid_status,
         }
 
-    async def async_accepts_anonymous(self) -> bool | None:
-        """Whether the charger's HTTP API is open; None if that cannot be told.
-
-        Asked even without stored credentials: once auth is enabled in the app,
-        the charger rejects this entry's requests too, and the issue follows.
-        Retried like any other request, since a single 503 from a busy charger
-        would otherwise leave the question open until the next check.
-        """
-        try:
-            return await self._fetch_with_retry(
-                self.client.async_accepts_anonymous, "/status (anonymous)"
-            )
-        except VoltieChargerError as exc:
-            _LOGGER.debug("Could not probe for anonymous HTTP API access: %s", exc)
-            return None
-
     async def _async_fetch_cdr(self, cdr_id: int) -> dict[str, Any] | None:
         return await self._fetch_with_retry(
             lambda: self.client.async_get_cdr(cdr_id), "/cdr"
@@ -238,8 +218,7 @@ class VoltieChargerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         The API version, the RFID endpoints and the meter reading are probed
         at setup only, so without this a firmware update would leave its new
-        entities missing and a stale firmware repair open until the next
-        restart.
+        entities missing until the next restart.
         """
         version = status.get("sw_ver")
         if version is None or self._reload_scheduled:
@@ -356,13 +335,6 @@ class VoltieChargerCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.async_request_refresh()
 
 
-def _scan_interval(entry: VoltieChargerConfigEntry) -> timedelta:
-    seconds = entry.options.get(CONF_SCAN_INTERVAL)
-    if isinstance(seconds, (int, float)) and seconds > 0:
-        return timedelta(seconds=int(seconds))
-    return DEFAULT_SCAN_INTERVAL
-
-
 # The integration is config-entry only; this makes HA reject a stray
 # `voltie_charger:` YAML block instead of silently ignoring it.
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
@@ -377,13 +349,17 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_setup_entry(
     hass: HomeAssistant, entry: VoltieChargerConfigEntry
 ) -> bool:
+    # First, so this happens even while the charger is unreachable.
+    _delete_legacy_issues(hass, entry)
+    _migrate_entry_data(hass, entry)
+
     session = async_get_clientsession(hass)
     client = VoltieChargerClient(
         session,
         entry.data[CONF_HOST],
-        entry.data.get(CONF_USERNAME),
-        entry.data.get(CONF_PASSWORD),
-        port=entry.data.get(CONF_PORT) or API_PORT,
+        entry.data.get(CONF_USERNAME) or None,
+        entry.data.get(CONF_PASSWORD) or None,
+        port=entry.data[CONF_PORT],
     )
 
     coordinator = VoltieChargerCoordinator(hass, entry, client)
@@ -402,123 +378,72 @@ async def async_setup_entry(
         raise ConfigEntryNotReady("Charger did not return a charger_id yet")
 
     coordinator.charger_id = charger_id
-    (
-        coordinator.api_version,
-        coordinator.api_version_unsupported,
-    ) = await _async_probe_api_version(client)
+    coordinator.api_version = await _async_probe_api_version(client)
 
     if entry.unique_id != charger_id:
         _migrate_unique_id(hass, entry, charger_id)
+    _migrate_title(hass, entry, charger_id)
 
     _migrate_device_identifier(hass, entry.entry_id, charger_id)
     _clear_stale_hw_version(hass, entry.entry_id, charger_id)
     # Before the platforms load, so each entity finds its existing registry
     # entry instead of registering a duplicate beside it.
-    await _async_migrate_entity_unique_ids(hass, entry, charger_id)
+    _migrate_entities(hass, entry, charger_id)
 
     entry.runtime_data = coordinator
-    entry.async_on_unload(entry.add_update_listener(_async_options_updated))
-
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    # After the platforms, so the device exists and its name can be shown.
-    _update_firmware_issue(hass, entry, coordinator)
-    await _async_update_auth_issue(hass, entry, coordinator)
-
-    async def _async_recheck_auth(_now: datetime) -> None:
-        await _async_update_auth_issue(hass, entry, coordinator)
-
-    # Enabling authentication in the app while Home Assistant already holds
-    # the credentials changes nothing it could notice, so look again now and
-    # then rather than leave the issue open until the next restart.
-    entry.async_on_unload(
-        async_track_time_interval(hass, _async_recheck_auth, AUTH_RECHECK_INTERVAL)
-    )
     return True
 
 
-async def _async_probe_api_version(
-    client: VoltieChargerClient,
-) -> tuple[int | None, bool]:
-    """Read /apiver once, returning (version, endpoint_missing).
-
-    Absent on old firmware, so failure is not fatal. Only a definitive "no such
-    endpoint" says the firmware is old; a timeout says nothing.
-    """
+async def _async_probe_api_version(client: VoltieChargerClient) -> int | None:
+    """Read /apiver once, for diagnostics; old firmware lacks it."""
     try:
-        return await client.async_get_apiver(), False
-    except VoltieChargerUnsupportedError:
-        return None, True
+        return await client.async_get_apiver()
     except VoltieChargerError as exc:
         _LOGGER.debug("Could not read /apiver: %s", exc)
-        return None, False
+        return None
 
 
-# Both repair issues only inform: firmware updates arrive from the Voltie cloud
-# by themselves and credentials are set in the Voltie app, so there is nothing
-# to fix from Home Assistant. Each clears itself once its cause is gone, and
-# one the user chose to ignore stays ignored while the cause persists.
-
-
-def _update_firmware_issue(
-    hass: HomeAssistant,
-    entry: VoltieChargerConfigEntry,
-    coordinator: VoltieChargerCoordinator,
+def _delete_legacy_issues(
+    hass: HomeAssistant, entry: VoltieChargerConfigEntry
 ) -> None:
-    """Raise or clear the outdated-firmware issue.
+    """Delete the repair issues v0.4.0 raised; this release raises none.
 
-    Evaluated at setup, which a firmware update triggers by reloading.
+    The built-in integration has neither, and with their strings gone, an
+    issue left behind would show raw translation keys.
     """
-    issue_id = f"{ISSUE_OUTDATED_FIRMWARE}_{entry.entry_id}"
-    version = coordinator.api_version
-    if coordinator.api_version_unsupported or (
-        version is not None and version < MIN_FULL_API_VERSION
-    ):
-        _create_issue(hass, entry, coordinator, issue_id, ISSUE_OUTDATED_FIRMWARE)
-    elif version is not None:
-        ir.async_delete_issue(hass, DOMAIN, issue_id)
+    for kind in LEGACY_ISSUES:
+        ir.async_delete_issue(hass, DOMAIN, f"{kind}_{entry.entry_id}")
 
 
-async def _async_update_auth_issue(
-    hass: HomeAssistant,
-    entry: VoltieChargerConfigEntry,
-    coordinator: VoltieChargerCoordinator,
+def _migrate_entry_data(
+    hass: HomeAssistant, entry: VoltieChargerConfigEntry
 ) -> None:
-    """Raise or clear the issue for an HTTP API open to anyone on the LAN."""
-    issue_id = f"{ISSUE_UNAUTHENTICATED_API}_{entry.entry_id}"
-    accepts_anonymous = await coordinator.async_accepts_anonymous()
-    if accepts_anonymous:
-        _create_issue(hass, entry, coordinator, issue_id, ISSUE_UNAUTHENTICATED_API)
-    elif accepts_anonymous is False:
-        ir.async_delete_issue(hass, DOMAIN, issue_id)
+    """Give the entry the data the built-in integration reads, and no options.
+
+    It reads host, port, username and password, and requires the port, which
+    entries from discovery and from releases before the port setting lack.
+    Empty credentials are fine: both integrations treat them as none. The one
+    option there ever was, the polling interval, is gone.
+    """
+    data = dict(entry.data)
+    data[CONF_PORT] = _port(data.get(CONF_PORT))
+    for key in (CONF_USERNAME, CONF_PASSWORD):
+        if data.get(key) is None:
+            data[key] = ""
+    if data != entry.data or entry.options:
+        hass.config_entries.async_update_entry(entry, data=data, options={})
 
 
-def _create_issue(
-    hass: HomeAssistant,
-    entry: VoltieChargerConfigEntry,
-    coordinator: VoltieChargerCoordinator,
-    issue_id: str,
-    translation_key: str,
-) -> None:
-    ir.async_create_issue(
-        hass,
-        DOMAIN,
-        issue_id,
-        is_fixable=False,
-        severity=ir.IssueSeverity.WARNING,
-        translation_key=translation_key,
-        translation_placeholders={
-            "name": _device_name(hass, entry, coordinator.charger_id)
-        },
-    )
-
-
-def _device_name(
-    hass: HomeAssistant, entry: VoltieChargerConfigEntry, charger_id: str
-) -> str:
-    device = _find_device(hass, entry.entry_id, (DOMAIN, charger_id))
-    if device is not None and (name := device.name_by_user or device.name):
-        return name
-    return entry.title
+def _port(value: Any) -> int:
+    """The stored port as an int, or the default if it is missing or invalid."""
+    if isinstance(value, bool):
+        return API_PORT
+    try:
+        port = int(value)
+    except (TypeError, ValueError):
+        return API_PORT
+    return port if 0 < port < 65536 else API_PORT
 
 
 def _find_device(
@@ -547,9 +472,12 @@ async def async_unload_entry(
 async def async_remove_entry(
     hass: HomeAssistant, entry: VoltieChargerConfigEntry
 ) -> None:
-    """Remove what outlives the entry: its repair issues and session store."""
-    for kind in (ISSUE_OUTDATED_FIRMWARE, ISSUE_UNAUTHENTICATED_API):
-        ir.async_delete_issue(hass, DOMAIN, f"{kind}_{entry.entry_id}")
+    """Remove what outlives the entry.
+
+    That is its session store, and any repair issue an older release left on
+    an entry that was not set up since.
+    """
+    _delete_legacy_issues(hass, entry)
     await SessionTracker(hass, entry.entry_id).async_remove()
 
 
@@ -571,12 +499,6 @@ async def async_migrate_entry(
     return True
 
 
-async def _async_options_updated(
-    hass: HomeAssistant, entry: VoltieChargerConfigEntry
-) -> None:
-    await hass.config_entries.async_reload(entry.entry_id)
-
-
 def _migrate_unique_id(
     hass: HomeAssistant, entry: VoltieChargerConfigEntry, charger_id: str
 ) -> None:
@@ -589,6 +511,29 @@ def _migrate_unique_id(
             )
             return
     hass.config_entries.async_update_entry(entry, unique_id=charger_id)
+
+
+# The title every earlier release gave a new entry: "Voltie Charger (<host>)".
+_OLD_DEFAULT_TITLE = re.compile(r"Voltie Charger \(.+\)")
+
+
+def _migrate_title(
+    hass: HomeAssistant, entry: VoltieChargerConfigEntry, charger_id: str
+) -> None:
+    """Give an entry with the old default title the one new entries get.
+
+    The built-in integration names the device after the entry, so the old
+    title would rename the device, and with it every entity's friendly name,
+    to "Voltie Charger (192.168.1.50)" on the move. The new title is the
+    device name this integration already shows. A title the user chose stays.
+    """
+    if _OLD_DEFAULT_TITLE.fullmatch(entry.title):
+        hass.config_entries.async_update_entry(entry, title=entry_title(charger_id))
+
+
+def entry_title(charger_id: str) -> str:
+    """The title of a new entry, the same as the built-in integration's."""
+    return f"Voltie Charger {charger_id[-4:].lower()}"
 
 
 def _migrate_device_identifier(
@@ -607,41 +552,71 @@ def _migrate_device_identifier(
     )
 
 
-async def _async_migrate_entity_unique_ids(
+def _parse_unique_id(
+    unique_id: str, charger_id: str, entry_id: str
+) -> tuple[int, str] | None:
+    """Split an entity unique ID into (format rank, key); None if foreign.
+
+    Rank 0 is the current "{charger_id}_{key}", 1 is v0.4.0's
+    "voltie_charger_{key}_{charger_id}" and 2 is v0.3.0's
+    "voltie_charger_{key}_{entry_id}". Keys contain underscores, so the key is
+    what remains once the known prefix and the known suffix are stripped.
+    """
+    if unique_id.startswith(f"{charger_id}_"):
+        key = unique_id.removeprefix(f"{charger_id}_")
+        return (0, key) if key else None
+    if not unique_id.startswith(LEGACY_UNIQUE_ID_PREFIX):
+        return None
+    rest = unique_id.removeprefix(LEGACY_UNIQUE_ID_PREFIX)
+    for rank, suffix in ((1, charger_id), (2, entry_id)):
+        if len(rest) > len(suffix) + 1 and rest.endswith(f"_{suffix}"):
+            return rank, rest.removesuffix(f"_{suffix}")
+    return None
+
+
+@callback
+def _migrate_entities(
     hass: HomeAssistant, entry: VoltieChargerConfigEntry, charger_id: str
 ) -> None:
-    """Re-key entity unique IDs from the config entry ID to the charger ID.
+    """Re-key entity unique IDs to "{charger_id}_{key}", the built-in format.
 
-    With entry-keyed IDs, removing and re-adding a charger could not bring its
-    entities back: HA keeps a deleted entity for 30 days, but restores its
-    entity_id, registry ID and customisations only for the same unique_id.
-    Rewriting in place keeps each entity_id, so history carries on.
+    The built-in integration has no migration code, so this leaves the
+    registry the way it expects it. Each entity is re-keyed in place, which
+    keeps its entity_id and with it history, customisations and automations.
+    The debug sensors the built-in one lacks are removed, not left as
+    orphans. Running it again changes nothing.
     """
     ent_reg = er.async_get(hass)
-    old_suffix = f"_{entry.entry_id}"
+    rekeys: list[tuple[int, str, str, str]] = []
+    for entity_entry in er.async_entries_for_config_entry(ent_reg, entry.entry_id):
+        parsed = _parse_unique_id(entity_entry.unique_id, charger_id, entry.entry_id)
+        if parsed is None:
+            continue
+        rank, key = parsed
+        key = RENAMED_ENTITY_KEYS.get(key, key)
+        if key in REMOVED_ENTITY_KEYS:
+            _LOGGER.debug("Removing %s, no longer provided", entity_entry.entity_id)
+            ent_reg.async_remove(entity_entry.entity_id)
+            continue
+        new_unique_id = f"{charger_id}_{key}"
+        if new_unique_id != entity_entry.unique_id:
+            rekeys.append(
+                (rank, entity_entry.entity_id, entity_entry.domain, new_unique_id)
+            )
 
-    @callback
-    def _rekey(entity_entry: er.RegistryEntry) -> dict[str, Any] | None:
-        if not entity_entry.unique_id.endswith(old_suffix):
-            return None
-        new_unique_id = (
-            f"{entity_entry.unique_id.removesuffix(old_suffix)}_{charger_id}"
-        )
-        if taken_by := ent_reg.async_get_entity_id(
-            entity_entry.domain, DOMAIN, new_unique_id
-        ):
+    # Newer formats first: should two entries claim one key, the newer wins.
+    for _rank, entity_id, domain, new_unique_id in sorted(rekeys):
+        if taken_by := ent_reg.async_get_entity_id(domain, DOMAIN, new_unique_id):
             # Only possible with two entries for one charger; leave it rather
             # than fail setup over a duplicate the user has to remove anyway.
             _LOGGER.warning(
                 "Not migrating %s to unique_id %s: %s already uses it",
-                entity_entry.entity_id,
+                entity_id,
                 new_unique_id,
                 taken_by,
             )
-            return None
-        return {"new_unique_id": new_unique_id}
-
-    await er.async_migrate_entries(hass, entry.entry_id, _rekey)
+            continue
+        ent_reg.async_update_entity(entity_id, new_unique_id=new_unique_id)
 
 
 def _clear_stale_hw_version(
@@ -651,7 +626,7 @@ def _clear_stale_hw_version(
 
     The registry keeps a field once written, so simply no longer reporting it
     leaves upgraded installs showing a "Hardware" value that is really the EVSE
-    firmware — the mislabelling this was meant to remove. Both versions now live
+    firmware, the mislabelling this was meant to remove. Both versions now live
     in sw_version instead.
     """
     device = _find_device(hass, entry_id, (DOMAIN, charger_id))
@@ -663,4 +638,5 @@ __all__ = [
     "VoltieChargerConfigEntry",
     "VoltieChargerCoordinator",
     "VoltieChargerError",
+    "entry_title",
 ]

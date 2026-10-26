@@ -1,4 +1,4 @@
-"""Event platform for Voltie Charger — the end of a charging session."""
+"""Event platform for Voltie Charger: the end of a charging session."""
 from __future__ import annotations
 
 from typing import Any

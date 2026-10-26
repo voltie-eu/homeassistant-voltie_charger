@@ -42,7 +42,7 @@
       },
       "api_disabled": {
         "title": "A töltő HTTP API-ja ki van kapcsolva",
-        "description": "A töltő (**{host}**) látható a hálózaton, de a HTTP API-ja ki van kapcsolva. Kapcsold be a Voltie mobilalkalmazásban: **Beállítások → Haladó beállítások → Kísérleti funkciók → HTTP API**, majd nyomd meg az Újra gombot.",
+        "description": "A töltő (**{host}**) látható a hálózaton, de a HTTP API-ja ki van kapcsolva. Kapcsold be a Voltie mobilalkalmazásban: **Beállítások → Haladó beállítások → Integrációk → HTTP API**, majd nyomd meg az Újra gombot.",
         "menu_options": {
           "api_retry": "Újra"
         }
@@ -71,57 +71,10 @@
       "reconfigure_successful": "Sikeres újrakonfigurálás."
     }
   },
-  "options": {
-    "step": {
-      "init": {
-        "title": "Voltie töltő beállításai",
-        "data": {
-          "scan_interval": "Lekérdezési időköz (másodperc)"
-        },
-        "data_description": {
-          "scan_interval": "Milyen gyakran kérdezze le az integráció a töltőt. Kisebb érték gyorsabb frissítést ad, de jobban terheli a töltőt."
-        }
-      }
-    }
-  },
   "entity": {
     "binary_sensor": {
-      "problem": {
-        "name": "Hiba",
-        "state_attributes": {
-          "error": {
-            "name": "Hiba típusa",
-            "state": {
-              "diode_check_failed": "Dióda-ellenőrzési hiba",
-              "gfci_fault": "Szivárgóáram",
-              "no_ground": "Nem érzékelhető védőföld",
-              "stuck_relay": "Beragadt relé",
-              "gfi_self_test_failure": "Sikertelen szivárgóáram-teszt",
-              "over_temperature": "Túlmelegedés",
-              "over_current": "Túláram",
-              "i2c_bus_error": "Belső buszhiba",
-              "ev_fault": "Járműhiba",
-              "over_humidity": "Túl magas páratartalom",
-              "phase_misconnected": "Hibás fázisbekötés",
-              "overvoltage": "Túlfeszültség",
-              "undervoltage": "Alacsony feszültség",
-              "mid_meter_missing": "MID-mérő nem található",
-              "power_board_unknown": "Ismeretlen teljesítménypanel",
-              "shutdown": "Leállítva",
-              "pe_n_fault": "Védőföld-nulla túlfeszültség",
-              "error": "Hiba"
-            }
-          },
-          "raw_code": {
-            "name": "Nyers kód"
-          }
-        }
-      },
       "car_connected": {
         "name": "Jármű csatlakoztatva"
-      },
-      "is_charging": {
-        "name": "Töltés"
       },
       "dlm_valid": {
         "name": "DLM-adatok érvényesek"
@@ -168,13 +121,12 @@
       "evse_state": {
         "name": "EVSE-állapot",
         "state": {
-          "unknown": "Ismeretlen",
           "ev_not_connected": "Nincs jármű csatlakoztatva",
           "ev_connected_not_charging": "Jármű csatlakoztatva",
           "ev_connected_charging": "Töltés folyamatban",
           "ev_connected_charging_ventilation": "Töltés folyamatban (szellőztetéssel)",
           "diode_check_failed": "Dióda-ellenőrzési hiba",
-          "gfci_fault": "Szivárgóáram",
+          "gfci_fault": "Szivárgó áram",
           "no_ground": "Nem érzékelhető védőföld",
           "stuck_relay": "Beragadt relé",
           "gfi_self_test_failure": "Sikertelen szivárgóáram-teszt",
@@ -190,12 +142,11 @@
           "booting": "Indítás",
           "mid_meter_missing": "MID-mérő nem található",
           "power_board_unknown": "Ismeretlen teljesítménypanel",
-          "waiting_for_timer": "Várakozás az időzítőre",
+          "sleeping": "Alvó állapot",
           "shutdown": "Leállítva",
           "undetermined": "Meghatározatlan",
           "firmware_update": "Firmware-frissítés folyamatban",
-          "pe_n_fault": "Védőföld-nulla túlfeszültség",
-          "error": "Hiba"
+          "pe_n_fault": "Védőföld-nulla túlfeszültség"
         }
       },
       "session_energy": {
@@ -228,9 +179,6 @@
       "ipm_current_phase": {
         "name": "IPM-áram L{phase}"
       },
-      "api_version": {
-        "name": "API-verzió"
-      },
       "rfid_list_count": {
         "name": "Tárolt RFID-kulcsok"
       },
@@ -239,12 +187,6 @@
       },
       "rfid_learn_remaining": {
         "name": "Hátralévő feltanítási idő"
-      },
-      "rfid_list_format_ver": {
-        "name": "RFID-lista formátumverziója"
-      },
-      "rfid_list_hash": {
-        "name": "RFID-lista ellenőrzőösszege"
       }
     },
     "switch": {
@@ -504,16 +446,6 @@
           "description": "Legfeljebb ennyi kulcsot ad vissza. 0 esetén az összeset."
         }
       }
-    }
-  },
-  "issues": {
-    "outdated_firmware": {
-      "title": "Régebbi firmware a töltőn: {name}",
-      "description": "A töltő ({name}) 5-ösnél régebbi HTTP API-verziót jelent, ezért az erre épülő funkciók, például az RFID-kulcsok kezelése, nem érhetők el. A töltők a Voltie felhőből automatikusan frissítik a firmware-t, ezért hagyd a töltőt az internetre csatlakoztatva. Ez az üzenet magától eltűnik, amint a töltő újabb firmware-t futtat."
-    },
-    "unauthenticated_api": {
-      "title": "Jelszó nélkül elérhető HTTP API: {name}",
-      "description": "A helyi hálózaton bárki olvashatja és vezérelheti a töltőt ({name}) a HTTP API-n keresztül. Állíts be felhasználónevet és jelszót a HTTP API-hoz a Voltie mobilalkalmazásban; ha kell, a Home Assistant ezután elkéri őket, és ez az üzenet magától eltűnik. Ha a töltő olyan hálózaton van, amelyet csak te felügyelsz, ezt az üzenetet figyelmen kívül hagyhatod."
     }
   }
 }

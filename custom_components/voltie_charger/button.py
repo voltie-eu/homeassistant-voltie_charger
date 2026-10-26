@@ -1,4 +1,4 @@
-"""Button platform for Voltie Charger — one-shot commands."""
+"""Button platform for Voltie Charger: one-shot commands."""
 from __future__ import annotations
 
 from collections.abc import Callable, Coroutine
@@ -51,6 +51,7 @@ RFID_BUTTONS: tuple[VoltieButtonDescription, ...] = (
     VoltieButtonDescription(
         key="rfid_learn",
         translation_key="rfid_learn",
+        entity_category=EntityCategory.CONFIG,
         # No arguments: the firmware defaults (30 s, unlimited tags) apply. The
         # voltie_charger.start_rfid_learn service takes timeout_sec/count_max
         # for callers that need them.
@@ -59,6 +60,7 @@ RFID_BUTTONS: tuple[VoltieButtonDescription, ...] = (
     VoltieButtonDescription(
         key="rfid_learn_cancel",
         translation_key="rfid_learn_cancel",
+        entity_category=EntityCategory.CONFIG,
         press_fn=lambda c: c.client.async_rfid_learn_cancel(),
     ),
 )

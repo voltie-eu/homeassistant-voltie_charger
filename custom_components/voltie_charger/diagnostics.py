@@ -27,6 +27,8 @@ async def async_get_config_entry_diagnostics(
             "options": dict(entry.options),
         },
         "coordinator": {
+            # Formerly a sensor; the built-in integration reports it here too.
+            "api_version": coordinator.api_version,
             "last_update_success": coordinator.last_update_success,
             "update_interval": (
                 coordinator.update_interval.total_seconds()

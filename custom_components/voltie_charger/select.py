@@ -1,4 +1,4 @@
-"""Select platform for Voltie Charger — the enum keys in /config."""
+"""Select platform for Voltie Charger: the enum keys in /config."""
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -109,7 +109,7 @@ class VoltieChargerSelect(VoltieChargerConfigEntity, SelectEntity):
 
     async def async_select_option(self, option: str) -> None:
         # The service layer validates against options, but a direct call
-        # doesn't — never push None to the charger.
+        # doesn't: never push None to the charger.
         value = self.entity_description.slug_map.get(option)
         if value is None:
             raise HomeAssistantError(f"Unsupported option: {option}")

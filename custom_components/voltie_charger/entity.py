@@ -77,10 +77,11 @@ class VoltieChargerEntity(CoordinatorEntity[VoltieChargerCoordinator]):
 
     def __init__(self, coordinator: VoltieChargerCoordinator, key: str) -> None:
         super().__init__(coordinator)
+        # The built-in integration's format, so it takes these entities over.
         # Keyed by the charger, not the config entry: HA only restores a removed
         # entity's entity_id and customisations when a re-added one presents
-        # the same unique_id.
-        self._attr_unique_id = f"voltie_charger_{key}_{coordinator.charger_id}"
+        # the same unique_id. The key must never change.
+        self._attr_unique_id = f"{coordinator.charger_id}_{key}"
 
     @property
     def _status(self) -> dict[str, Any]:

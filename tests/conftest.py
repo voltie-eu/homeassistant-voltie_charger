@@ -5,9 +5,9 @@ drift between the spec and the integration shows up as a test failure.
 """
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import PropertyMock, patch
 
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -47,6 +47,17 @@ def no_retry_backoff():
     """
     with patch(
         "custom_components.voltie_charger.UPDATE_RETRY_BACKOFF_S", 0
+    ):
+        yield
+
+
+@pytest.fixture
+def entity_registry_enabled_by_default() -> Generator[None]:
+    """Create entities disabled by default, such as the per-phase ones, enabled."""
+    with patch(
+        "homeassistant.helpers.entity.Entity.entity_registry_enabled_default",
+        return_value=True,
+        new_callable=PropertyMock,
     ):
         yield
 
@@ -182,7 +193,7 @@ def legacy_config_payload() -> dict[str, Any]:
 
 
 def rfid_status_payload(**overrides: Any) -> dict[str, Any]:
-    """A GET /rfid/status response (spec 4.11.2) — fields nested."""
+    """A GET /rfid/status response (spec 4.11.2), fields nested."""
     status = {
         "list_count": 5,
         "list_capacity": 200,
@@ -288,7 +299,7 @@ def config_entry() -> MockConfigEntry:
     """A config entry pointing at the mocked charger."""
     return MockConfigEntry(
         domain=DOMAIN,
-        title=f"Voltie Charger ({HOST})",
+        title="Voltie Charger 4335",
         unique_id=CHARGER_ID,
         version=2,
         data={

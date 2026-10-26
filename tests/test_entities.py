@@ -7,7 +7,14 @@ import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClientMocker
 
-from homeassistant.const import ATTR_ENTITY_ID, STATE_OFF, STATE_ON, STATE_UNAVAILABLE
+from homeassistant.const import (
+    ATTR_ENTITY_ID,
+    STATE_OFF,
+    STATE_ON,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+    EntityCategory,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
@@ -19,6 +26,7 @@ from .conftest import (
     BASE,
     CHARGER_ID,
     ack,
+    cdr_payload,
     config_payload,
     legacy_config_payload,
     rfid_status_payload,
@@ -50,7 +58,7 @@ async def test_new_status_sensors(
 async def test_phases_used_zero_when_idle(
     hass: HomeAssistant, mock_charger, config_entry: MockConfigEntry
 ) -> None:
-    """0 is a real value, not 'unknown' — an enum sensor would have logged.
+    """0 is a real value, not 'unknown'; an enum sensor would have logged.
 
     Named "Active phases" rather than "Phases in use": on an upgraded install the
     pre-existing `phases` sensor already owns the `..._phases_in_use` entity_id,
@@ -62,22 +70,39 @@ async def test_phases_used_zero_when_idle(
     assert hass.states.get(_eid("sensor", "active_phases")).state == "0"
 
 
-async def test_api_version_sensor(
-    hass: HomeAssistant, mock_charger, config_entry: MockConfigEntry
+@pytest.mark.parametrize("apiver", [5, None])
+async def test_api_version_is_in_diagnostics(
+    hass: HomeAssistant, mock_charger, config_entry: MockConfigEntry, apiver
 ) -> None:
-    mock_charger(apiver=5)
-    await setup_integration(hass, config_entry)
-    assert hass.states.get(_eid("sensor", "api_version")).state == "5"
+    """Formerly a sensor; a 404 on /apiver must not break setup."""
+    from custom_components.voltie_charger.diagnostics import (
+        async_get_config_entry_diagnostics,
+    )
 
-
-async def test_api_version_absent_on_old_firmware(
-    hass: HomeAssistant, mock_charger, config_entry: MockConfigEntry
-) -> None:
-    """A 404 on /apiver must not break setup."""
-    mock_charger(apiver=None, rfid_supported=False)
+    mock_charger(apiver=apiver, rfid_supported=apiver is not None)
     await setup_integration(hass, config_entry)
     assert config_entry.state.name == "LOADED"
-    assert hass.states.get(_eid("sensor", "api_version")).state == "unknown"
+    result = await async_get_config_entry_diagnostics(hass, config_entry)
+    assert result["coordinator"]["api_version"] == apiver
+
+
+async def test_debug_sensors_are_gone(
+    hass: HomeAssistant,
+    mock_charger,
+    config_entry: MockConfigEntry,
+    entity_registry: er.EntityRegistry,
+    entity_registry_enabled_by_default: None,
+) -> None:
+    """The built-in integration keeps these values in diagnostics only."""
+    mock_charger()
+    await setup_integration(hass, config_entry)
+    keys = {
+        e.unique_id.removeprefix(f"{CHARGER_ID}_")
+        for e in er.async_entries_for_config_entry(
+            entity_registry, config_entry.entry_id
+        )
+    }
+    assert keys.isdisjoint({"api_version", "rfid_list_hash", "rfid_list_format_ver"})
 
 
 async def test_evse_state_4_is_not_an_error(
@@ -90,12 +115,30 @@ async def test_evse_state_4_is_not_an_error(
     assert state.state == "ev_connected_charging_ventilation"
 
 
-async def test_undocumented_evse_state_is_error(
-    hass: HomeAssistant, mock_charger, config_entry: MockConfigEntry
+@pytest.mark.parametrize(
+    "raw",
+    [
+        # Before the first valid EVSE reading.
+        0,
+        # A code newer firmware adds; the problem sensor still flags it.
+        99,
+        "3",
+        None,
+    ],
+)
+async def test_evse_state_without_an_option_is_unknown(
+    hass: HomeAssistant, mock_charger, config_entry: MockConfigEntry, raw
 ) -> None:
-    mock_charger(status=status_payload(evse_state=99))
+    """As in the built-in integration: no "unknown" or "error" option."""
+    status = status_payload(evse_state=raw)
+    if raw is None:
+        status.pop("evse_state")
+    mock_charger(status=status)
     await setup_integration(hass, config_entry)
-    assert hass.states.get(_eid("sensor", "evse_state")).state == "error"
+    state = hass.states.get(_eid("sensor", "evse_state"))
+    assert state.state == STATE_UNKNOWN
+    assert "unknown" not in state.attributes["options"]
+    assert "error" not in state.attributes["options"]
 
 
 async def test_out_of_service_is_not_an_error(
@@ -112,26 +155,26 @@ async def test_out_of_service_is_not_an_error(
 
 
 @pytest.mark.parametrize(
-    ("code", "expected", "error"),
+    ("code", "expected"),
     [
         # Before the first valid EVSE read: no false alarm at startup.
-        (0, STATE_OFF, None),
-        (1, STATE_OFF, None),
-        (3, STATE_OFF, None),
-        (6, STATE_ON, "gfci_fault"),
-        (7, STATE_ON, "no_ground"),
+        (0, STATE_OFF),
+        (1, STATE_OFF),
+        (3, STATE_OFF),
+        (6, STATE_ON),
+        (7, STATE_ON),
         # The vehicle's fault rather than the charger's, but charging is stuck.
-        (13, STATE_ON, "ev_fault"),
+        (13, STATE_ON),
         # Out of service, booting, a scheduled wait, a firmware update.
-        (18, STATE_OFF, None),
-        (19, STATE_OFF, None),
-        (22, STATE_OFF, None),
-        (24, STATE_OFF, None),
-        (25, STATE_OFF, None),
-        (20, STATE_ON, "mid_meter_missing"),
-        (26, STATE_ON, "pe_n_fault"),
+        (18, STATE_OFF),
+        (19, STATE_OFF),
+        (22, STATE_OFF),
+        (24, STATE_OFF),
+        (25, STATE_OFF),
+        (20, STATE_ON),
+        (26, STATE_ON),
         # A code newer firmware adds.
-        (99, STATE_ON, "error"),
+        (99, STATE_ON),
     ],
 )
 async def test_problem_sensor(
@@ -140,15 +183,15 @@ async def test_problem_sensor(
     config_entry: MockConfigEntry,
     code: int,
     expected: str,
-    error: str | None,
 ) -> None:
     mock_charger(status=status_payload(evse_state=code))
     await setup_integration(hass, config_entry)
     state = hass.states.get(_eid("binary_sensor", "problem"))
     assert state.state == expected
     assert state.attributes["device_class"] == "problem"
-    assert state.attributes["error"] == error
-    assert state.attributes["raw_code"] == code
+    # The fault itself is the EVSE state sensor's; the attributes are gone.
+    assert "error" not in state.attributes
+    assert "raw_code" not in state.attributes
 
 
 @pytest.mark.parametrize("raw", [None, "6", True])
@@ -176,7 +219,7 @@ async def test_total_energy_needs_firmware_support(
     mock_charger()
     await setup_integration(hass, config_entry)
     assert entity_registry.async_get_entity_id(
-        "sensor", DOMAIN, f"voltie_charger_total_energy_{CHARGER_ID}"
+        "sensor", DOMAIN, f"{CHARGER_ID}_total_energy"
     ) is None
 
 
@@ -556,24 +599,6 @@ async def test_rfid_learn_state_reflected(
     assert hass.states.get(_eid("sensor", "rfid_learn_time_remaining")).state == "25"
 
 
-async def test_rfid_list_hash_is_a_string_sensor(
-    hass: HomeAssistant, mock_charger, config_entry: MockConfigEntry, entity_registry
-) -> None:
-    """The hash is hex text; treating it as numeric would break the recorder."""
-    mock_charger()
-    entity_registry.async_get_or_create(
-        "sensor",
-        DOMAIN,
-        f"voltie_charger_rfid_list_hash_{CHARGER_ID}",
-        suggested_object_id=f"{PREFIX}_rfid_list_hash",
-        disabled_by=None,
-    )
-    await setup_integration(hass, config_entry)
-    state = hass.states.get(_eid("sensor", "rfid_list_hash"))
-    assert state.state == "A3F21B8C"
-    assert "state_class" not in state.attributes
-
-
 # ---- buttons ----
 
 
@@ -662,3 +687,190 @@ async def test_device_info(
     assert device.sw_version == "1.3.25 (EVSE 1.05)"
     assert device.hw_version is None
     assert device.serial_number == "000000009d104335"
+
+
+# ---- alignment with the built-in integration (v0.5.0) ----
+
+# Every entity key, per platform. The built-in integration uses the same ones,
+# and its unique IDs are "{charger_id}_{key}", so these must never change.
+FROZEN_KEYS: dict[str, set[str]] = {
+    "sensor": {
+        "evse_state",
+        "charge_power",
+        "charge_current",
+        "session_energy",
+        "total_energy",
+        "mains_voltage",
+        "phases",
+        "phases_used",
+        "current_offered",
+        "session_charge_time",
+        "session_idle_time",
+        "average_power",
+        "current_hw_limit",
+        *(
+            f"{kind}_l{phase}"
+            for kind in ("voltage", "current", "power", "dlm_current", "ipm_current")
+            for phase in (1, 2, 3)
+        ),
+        "rfid_list_count",
+        "rfid_learn_remaining",
+        "rfid_list_capacity",
+    },
+    "binary_sensor": {
+        "car_connected",
+        "is_charging",
+        "problem",
+        "dlm_valid",
+        "ipm_valid",
+        "rfid_reader_enabled",
+        "rfid_reader_working",
+        "rfid_learn_in_progress",
+    },
+    "switch": {
+        "charging",
+        "autostart",
+        "display",
+        "front_led",
+        "rear_led",
+        "buzzer",
+        "out_of_service",
+        "force_single_phase",
+    },
+    "number": {
+        "current_limit",
+        "dlm_current_limit",
+        "dlm_eco_startcurr",
+        "grid_u_stop",
+        "grid_u_min",
+        "grid_u_max",
+        "grid_t_up",
+        "grid_t_dn",
+    },
+    "select": {"dlm_mode", "access_mode"},
+    "button": {"reboot", "rfid_learn", "rfid_learn_cancel"},
+    "event": {"charging_session"},
+}
+
+
+async def test_entity_keys_are_frozen(
+    hass: HomeAssistant,
+    mock_charger,
+    config_entry: MockConfigEntry,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    mock_charger(status=status_payload(meter_kwh=1523.4))
+    await setup_integration(hass, config_entry)
+
+    keys: dict[str, set[str]] = {}
+    for entry in er.async_entries_for_config_entry(
+        entity_registry, config_entry.entry_id
+    ):
+        assert entry.unique_id.startswith(f"{CHARGER_ID}_"), entry.unique_id
+        keys.setdefault(entry.domain, set()).add(
+            entry.unique_id.removeprefix(f"{CHARGER_ID}_")
+        )
+    assert keys == FROZEN_KEYS
+
+
+@pytest.mark.parametrize(
+    ("entity_id", "category", "enabled"),
+    [
+        (_eid("sensor", "evse_state"), None, True),
+        (_eid("sensor", "mains_voltage"), EntityCategory.DIAGNOSTIC, True),
+        (_eid("sensor", "phases_wired"), EntityCategory.DIAGNOSTIC, True),
+        (_eid("sensor", "voltage_l1"), EntityCategory.DIAGNOSTIC, False),
+        (_eid("sensor", "current_l2"), EntityCategory.DIAGNOSTIC, False),
+        (_eid("sensor", "power_l3"), EntityCategory.DIAGNOSTIC, False),
+        (_eid("button", "start_rfid_learn_mode"), EntityCategory.CONFIG, True),
+        (_eid("button", "cancel_rfid_learn_mode"), EntityCategory.CONFIG, True),
+    ],
+)
+async def test_entity_metadata_matches_the_builtin_integration(
+    hass: HomeAssistant,
+    mock_charger,
+    config_entry: MockConfigEntry,
+    entity_registry: er.EntityRegistry,
+    entity_id: str,
+    category: EntityCategory | None,
+    enabled: bool,
+) -> None:
+    """Categories and enabled-by-default as in the built-in integration.
+
+    On a new install, that is: an existing registry entry keeps whatever
+    enabled state it has.
+    """
+    mock_charger()
+    await setup_integration(hass, config_entry)
+    entry = entity_registry.async_get(entity_id)
+    assert entry is not None, entity_id
+    assert entry.entity_category == category
+    assert (entry.disabled_by is None) is enabled
+
+
+async def test_existing_per_phase_sensor_stays_enabled(
+    hass: HomeAssistant,
+    mock_charger,
+    config_entry: MockConfigEntry,
+    entity_registry: er.EntityRegistry,
+) -> None:
+    """Disabled by default only applies to entities created from now on."""
+    mock_charger()
+    config_entry.add_to_hass(hass)
+    entity_registry.async_get_or_create(
+        "sensor",
+        DOMAIN,
+        f"voltie_charger_voltage_l1_{CHARGER_ID}",
+        config_entry=config_entry,
+        suggested_object_id=f"{PREFIX}_voltage_l1",
+    )
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    entry = entity_registry.async_get(_eid("sensor", "voltage_l1"))
+    assert entry.unique_id == f"{CHARGER_ID}_voltage_l1"
+    assert entry.disabled_by is None
+    assert entry.entity_category == EntityCategory.DIAGNOSTIC
+    assert float(hass.states.get(entry.entity_id).state) == 231.461
+
+
+@pytest.mark.parametrize(
+    ("key", "name"),
+    [("problem", "Problem"), ("charging", "Charging")],
+)
+async def test_named_after_the_device_class(
+    hass: HomeAssistant,
+    mock_charger,
+    config_entry: MockConfigEntry,
+    entity_registry: er.EntityRegistry,
+    key: str,
+    name: str,
+) -> None:
+    mock_charger()
+    await setup_integration(hass, config_entry)
+    entity_id = _eid("binary_sensor", key)
+    assert entity_registry.async_get(entity_id).translation_key is None
+    assert hass.states.get(entity_id).name == f"Voltie Charger 4335 {name}"
+
+
+async def test_no_extra_state_attributes(
+    hass: HomeAssistant, mock_charger, config_entry: MockConfigEntry
+) -> None:
+    """raw_code, session_start, periods and error are gone, as in core."""
+    mock_charger(
+        status=status_payload(
+            evse_state=6, is_car_connected=True, cdr=cdr_payload()
+        )
+    )
+    await setup_integration(hass, config_entry)
+
+    evse_state = hass.states.get(_eid("sensor", "evse_state"))
+    assert evse_state.state == "gfci_fault"
+    assert "raw_code" not in evse_state.attributes
+    energy = hass.states.get(_eid("sensor", "session_energy"))
+    assert float(energy.state) == 5.852
+    assert "session_start" not in energy.attributes
+    assert "periods" not in energy.attributes
+    problem = hass.states.get(_eid("binary_sensor", "problem"))
+    assert problem.state == STATE_ON
+    assert set(problem.attributes) == {"device_class", "friendly_name"}

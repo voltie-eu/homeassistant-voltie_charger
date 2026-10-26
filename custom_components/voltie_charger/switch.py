@@ -125,9 +125,8 @@ class VoltieChargerChargingSwitch(VoltieChargerEntity, SwitchEntity):
     _attr_translation_key = "charging"
 
     def __init__(self, coordinator: VoltieChargerCoordinator) -> None:
-        # Base class builds unique_id from this key; "switch" preserves the
-        # entity registry entry from earlier releases.
-        super().__init__(coordinator, "switch")
+        # Releases before v0.5.0 used the key "switch"; setup re-keys it.
+        super().__init__(coordinator, "charging")
 
     @property
     def is_on(self) -> bool | None:

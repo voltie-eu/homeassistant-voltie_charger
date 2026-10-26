@@ -14,7 +14,7 @@ from pytest_homeassistant_custom_component.test_util.aiohttp import AiohttpClien
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 
-from custom_components.voltie_charger.const import DEFAULT_SCAN_INTERVAL, DOMAIN
+from custom_components.voltie_charger.const import DOMAIN, SCAN_INTERVAL
 
 from .conftest import BASE, charger_device, setup_integration, status_payload
 
@@ -101,7 +101,7 @@ async def test_dynamic_max_follows_a_mid_run_change(
     aioclient_mock: AiohttpClientMocker,
     freezer: FrozenDateTimeFactory,
 ) -> None:
-    """native_max_value overrides a cached_property via super() — prove no staleness."""
+    """native_max_value overrides a cached_property via super(); prove no staleness."""
     mock_charger(status=status_payload(current_hw_limit=32))
     await setup_integration(hass, config_entry)
     eid = f"number.{PREFIX}_maximum_charging_current"
@@ -109,7 +109,7 @@ async def test_dynamic_max_follows_a_mid_run_change(
 
     aioclient_mock.clear_requests()
     mock_charger(status=status_payload(current_hw_limit=16))
-    freezer.tick(DEFAULT_SCAN_INTERVAL + timedelta(seconds=1))
+    freezer.tick(SCAN_INTERVAL + timedelta(seconds=1))
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
 
@@ -147,7 +147,7 @@ async def test_no_error_logs_on_legacy_firmware(
     assert not [r for r in own if r.levelname == "ERROR"], [
         r.getMessage() for r in own
     ]
-    # Exactly one warning, naming the cause, and only once — the latch must stop
+    # Exactly one warning, naming the cause, and only once: the latch must stop
     # it repeating on every poll.
     warns = [r.getMessage() for r in own if r.levelname == "WARNING"]
     assert len(warns) == 1, warns
@@ -197,6 +197,7 @@ async def test_non_dict_power_stat_does_not_break_per_phase_sensors(
     config_entry: MockConfigEntry,
     aioclient_mock: AiohttpClientMocker,
     caplog,
+    entity_registry_enabled_by_default: None,
 ) -> None:
     """power_stat as a list would make .get() raise in 15 value_fns."""
     aioclient_mock.get(

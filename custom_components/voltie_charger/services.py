@@ -85,7 +85,7 @@ if TYPE_CHECKING:
 # Patterns are used with re.match, so they are end-anchored with \Z.
 #
 # Stored RFID tags (/rfid): spec 4.11.1 documents the charset as 0-9 A-Z a-z _ -,
-# but the firmware rejects anything non-hexadecimal — verified against sw 9.3.29
+# but the firmware rejects anything non-hexadecimal, verified against sw 9.3.29
 # and 1.3.40, where "DEADBEEF01" is accepted and "CLAUDETEST01" returns
 # error_code 5. Validating here turns a baffling "charger rejected the tag" into
 # a usable message. Loosen it if the firmware ever accepts the documented set.
@@ -116,7 +116,7 @@ def _unsupported_target(value: Any) -> Any:
 
 
 # HA merges the service target into call.data, so the picked device arrives as
-# data[device_id] — a list from the UI, a bare string from hand-written YAML.
+# data[device_id]: a list from the UI, a bare string from hand-written YAML.
 _DEVICE_TARGET = {
     vol.Required(ATTR_DEVICE_ID, msg=_TARGET_DEVICE_MSG): vol.All(
         cv.ensure_list, [cv.string], vol.Length(min=1)
@@ -263,6 +263,19 @@ async def _guard(coro: Coroutine[Any, Any, dict[str, Any]]) -> dict[str, Any]:
         raise _to_ha_error(exc) from exc
 
 
+def _device_config_entry_ids(device: dr.DeviceEntry) -> set[str]:
+    """The config entries a device belongs to, the way the running release wants.
+
+    Home Assistant 2026.9 gave a device a single config entry, config_entry_id,
+    and deprecated the config_entries set, which logs from 2026.10 and goes in
+    2027.10. Older releases, which the manifest still supports, only have the
+    set.
+    """
+    if (entry_id := getattr(device, "config_entry_id", None)) is not None:
+        return {entry_id}
+    return set(device.config_entries)
+
+
 def _resolve_coordinator(call: ServiceCall) -> VoltieChargerCoordinator:
     """Resolve the targeted device to its loaded coordinator."""
     device_ids: list[str] = call.data[ATTR_DEVICE_ID]
@@ -281,7 +294,7 @@ def _resolve_coordinator(call: ServiceCall) -> VoltieChargerCoordinator:
             f"No device with ID {device_id} exists; pick the charger again."
         )
 
-    for entry_id in device.config_entries:
+    for entry_id in _device_config_entry_ids(device):
         entry = call.hass.config_entries.async_get_entry(entry_id)
         if entry is not None and entry.domain == DOMAIN:
             break

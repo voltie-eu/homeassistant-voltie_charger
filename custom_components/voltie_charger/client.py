@@ -67,7 +67,7 @@ _API_ERROR_MESSAGES: dict[int, str] = {
 
 # Only code 24 means "this firmware cannot do that". Code 23 is a cluster
 # topology problem on perfectly current firmware, so it must not be reported as
-# an out-of-date firmware — the remedy is a different target, not an update.
+# an out-of-date firmware: the remedy is a different target, not an update.
 _UNSUPPORTED_ERROR_CODES = frozenset({24})
 
 
@@ -132,7 +132,7 @@ class VoltieChargerClient:
         except aiohttp.ClientResponseError as exc:
             if exc.status in (401, 403):
                 raise VoltieChargerAuthError(str(exc)) from exc
-            # 404/405 mean the endpoint isn't implemented — older firmware
+            # 404/405 mean the endpoint isn't implemented: older firmware
             # rather than a network problem (spec section 3).
             if exc.status in (404, 405):
                 raise VoltieChargerUnsupportedError(
@@ -183,7 +183,7 @@ class VoltieChargerClient:
                 raise VoltieChargerRejectedError(detail)
 
         # Some failure responses carry a textual "status" field instead of
-        # error_code — surface those as transient connection issues so the
+        # error_code. Surface those as transient connection issues so the
         # coordinator retries instead of treating them as auth failures.
         # Only trusted when no error_code came back at all: a normal payload
         # that ever grows a "status" key must not fail every poll.
@@ -199,20 +199,6 @@ class VoltieChargerClient:
     async def async_get_status(self) -> dict[str, Any]:
         return await self._request("GET", ENDPOINT_STATUS)
 
-    async def async_accepts_anonymous(self) -> bool:
-        """Whether the charger answers /status without credentials.
-
-        Sent without auth even when this client has credentials: those are
-        accepted whether or not the charger enforces them, so only an
-        anonymous request tells an open API from a protected one.
-        """
-        anonymous = VoltieChargerClient(self._session, self._host, port=self._port)
-        try:
-            await anonymous.async_get_status()
-        except VoltieChargerAuthError:
-            return False
-        return True
-
     async def async_get_power(self) -> dict[str, Any]:
         return await self._request("GET", ENDPOINT_POWER)
 
@@ -223,7 +209,7 @@ class VoltieChargerClient:
         result = await self._request("PUT", ENDPOINT_CONFIG, json_body=values)
         # The charger reports how many parameters it accepted. A shortfall
         # means the hardware silently rejected one and we need to tell the
-        # caller — otherwise the UI would flip optimistically without effect.
+        # caller, otherwise the UI would flip optimistically without effect.
         accepted = result.get("accepted")
         if isinstance(accepted, int) and accepted < len(values):
             raise VoltieChargerRejectedError(

@@ -359,6 +359,33 @@ async def test_service_on_unknown_device(
         )
 
 
+class _SingleEntryDevice:
+    """A device as Home Assistant 2026.9 and newer has it."""
+
+    config_entry_id = "entry-new"
+
+    @property
+    def config_entries(self) -> set[str]:
+        # Deprecated since 2026.10; core's test harness turns it into an error.
+        raise AssertionError("DeviceEntry.config_entries is deprecated")
+
+
+class _MultiEntryDevice:
+    """A device as releases before 2026.9 have it."""
+
+    config_entries = {"entry-old"}
+
+
+@pytest.mark.parametrize(
+    ("device", "expected"),
+    [(_SingleEntryDevice(), {"entry-new"}), (_MultiEntryDevice(), {"entry-old"})],
+)
+def test_device_config_entries_without_the_deprecated_set(device, expected) -> None:
+    from custom_components.voltie_charger.services import _device_config_entry_ids
+
+    assert _device_config_entry_ids(device) == expected
+
+
 async def test_service_charger_error_surfaces(
     hass: HomeAssistant, device_id: str, aioclient_mock: AiohttpClientMocker
 ) -> None:

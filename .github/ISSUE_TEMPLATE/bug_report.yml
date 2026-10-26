@@ -1,0 +1,63 @@
+name: Bug report
+description: Something isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug.
+        Please run through the checklist below before submitting.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened, and what did you expect to happen?
+      placeholder: When I slide to start charging, the card …
+    validations:
+      required: true
+  - type: input
+    id: charger_firmware
+    attributes:
+      label: Charger firmware version
+      description: Found in the Voltie app or on the charger's web UI.
+    validations:
+      required: true
+  - type: input
+    id: ha_version
+    attributes:
+      label: Home Assistant version
+      placeholder: "2026.4.1"
+    validations:
+      required: true
+  - type: input
+    id: integration_version
+    attributes:
+      label: Integration version
+      description: From HACS or custom_components/voltie_charger/manifest.json.
+    validations:
+      required: true
+  - type: input
+    id: card_version
+    attributes:
+      label: Card version (if relevant)
+      description: Shown in the browser console on page load.
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps we can follow to see the problem.
+      placeholder: |
+        1. Plug in vehicle
+        2. …
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Home Assistant logs (Settings → System → Logs) and, if the card is
+        involved, anything from the browser console. Please attach the integration's
+        diagnostics JSON (Settings → Devices & Services → Voltie → ⋯ → Download
+        diagnostics) — it's already sanitised.
+      render: shell

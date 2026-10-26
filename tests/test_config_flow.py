@@ -1,4 +1,4 @@
-"""Config, options, reauth, reconfigure and zeroconf flows."""
+"""Config, reauth, reconfigure and zeroconf flows."""
 from __future__ import annotations
 
 from ipaddress import ip_address
@@ -14,7 +14,7 @@ from homeassistant.config_entries import (
 )
 from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_PORT, CONF_USERNAME
 from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.data_entry_flow import FlowResultType, UnknownHandler
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from custom_components.voltie_charger.const import API_PORT, DOMAIN
@@ -37,6 +37,8 @@ async def test_user_flow_defaults_to_standard_port(
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"][CONF_PORT] == API_PORT
     assert result["result"].unique_id == CHARGER_ID
+    # The built-in integration's title, which it also names the device after.
+    assert result["title"] == "Voltie Charger 4335"
 
 
 async def test_user_flow_with_custom_port(
@@ -195,18 +197,15 @@ async def test_reauth_flow(
         await hass.async_block_till_done()
 
 
-async def test_options_flow_sets_scan_interval(
+async def test_no_options_flow(
     hass: HomeAssistant, mock_charger, config_entry: MockConfigEntry
 ) -> None:
+    """The polling interval option is gone, as in the built-in integration."""
     mock_charger()
     await setup_integration(hass, config_entry)
 
-    result = await hass.config_entries.options.async_init(config_entry.entry_id)
-    result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"scan_interval": 15}
-    )
-    assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert config_entry.options["scan_interval"] == 15
+    with pytest.raises(UnknownHandler):
+        await hass.config_entries.options.async_init(config_entry.entry_id)
 
 
 async def test_zeroconf_discovery(hass: HomeAssistant, mock_charger) -> None:
@@ -229,11 +228,18 @@ async def test_zeroconf_discovery(hass: HomeAssistant, mock_charger) -> None:
 
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["data"][CONF_HOST] == HOST
+    assert result["title"] == "Voltie Charger 4335"
+    # Every key the built-in integration reads, the port included.
+    assert result["data"] == {
+        CONF_HOST: HOST,
+        CONF_PORT: API_PORT,
+        CONF_USERNAME: "",
+        CONF_PASSWORD: "",
+    }
 
 
 async def test_zeroconf_needs_auth(
-    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker
+    hass: HomeAssistant, aioclient_mock: AiohttpClientMocker, mock_charger
 ) -> None:
     aioclient_mock.get(f"{BASE}/status", status=401)
     result = await hass.config_entries.flow.async_init(
@@ -251,6 +257,20 @@ async def test_zeroconf_needs_auth(
     )
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "discovery_auth"
+
+    aioclient_mock.clear_requests()
+    mock_charger()
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_USERNAME: "admin", CONF_PASSWORD: "secret"}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["title"] == "Voltie Charger 4335"
+    assert result["data"] == {
+        CONF_HOST: HOST,
+        CONF_PORT: API_PORT,
+        CONF_USERNAME: "admin",
+        CONF_PASSWORD: "secret",
+    }
 
 
 async def test_zeroconf_api_disabled_offers_retry(
@@ -362,3 +382,63 @@ async def test_zeroconf_still_offers_another_protected_charger(
     )
     assert result["type"] is FlowResultType.FORM
     assert result["step_id"] == "discovery_auth"
+
+
+async def test_user_flow_while_discovery_in_progress(
+    hass: HomeAssistant, mock_charger
+) -> None:
+    """Adding a charger by hand works while its discovery is still offered."""
+    mock_charger()
+    discovered = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_ZEROCONF},
+        data=_discovery(hostname=f"{HOST}."),
+    )
+    assert discovered["step_id"] == "zeroconf_confirm"
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"], {CONF_HOST: HOST}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result["result"].unique_id == CHARGER_ID
+
+
+@pytest.mark.parametrize("probe", [{"status": 401}, {"exc": TimeoutError()}])
+async def test_user_flow_drops_discovery_without_charger_id(
+    hass: HomeAssistant,
+    aioclient_mock: AiohttpClientMocker,
+    mock_charger,
+    probe: dict,
+) -> None:
+    """Adding a charger by hand drops its discovery that has no charger ID."""
+    aioclient_mock.get(f"{BASE}/status", **probe)
+    discovered = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_ZEROCONF},
+        data=_discovery(hostname=f"{HOST}."),
+    )
+    assert discovered["type"] in (FlowResultType.FORM, FlowResultType.MENU)
+    # Another charger's discovery stays
+    aioclient_mock.get(f"http://voltiecharger-beef.local:{API_PORT}/status", status=401)
+    other = await hass.config_entries.flow.async_init(
+        DOMAIN,
+        context={"source": SOURCE_ZEROCONF},
+        data=_discovery(name="voltiecharger-beef", ip="192.168.1.77"),
+    )
+
+    aioclient_mock.clear_requests()
+    mock_charger()
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": SOURCE_USER}
+    )
+    result = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        {CONF_HOST: HOST, CONF_USERNAME: "admin", CONF_PASSWORD: "secret"},
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert [flow["flow_id"] for flow in hass.config_entries.flow.async_progress()] == [
+        other["flow_id"]
+    ]

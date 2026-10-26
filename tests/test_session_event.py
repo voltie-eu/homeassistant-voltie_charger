@@ -15,7 +15,7 @@ from homeassistant.const import STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
-from custom_components.voltie_charger.const import DEFAULT_SCAN_INTERVAL
+from custom_components.voltie_charger.const import SCAN_INTERVAL
 
 from .conftest import BASE, ack, cdr_payload, setup_integration, status_payload
 
@@ -65,7 +65,7 @@ async def _poll(
             f"{BASE}/cdr?cdr_id={cdr['cdr_id']}", json=ack(cdr=cdr)
         )
     mock_charger(status=status)
-    freezer.tick(DEFAULT_SCAN_INTERVAL + timedelta(seconds=1))
+    freezer.tick(SCAN_INTERVAL + timedelta(seconds=1))
     async_fire_time_changed(hass)
     await hass.async_block_till_done()
 

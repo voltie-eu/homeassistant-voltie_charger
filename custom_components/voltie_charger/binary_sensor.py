@@ -20,8 +20,6 @@ from .const import (
     DATA_RFID_STATUS,
     DATA_STATUS,
     EVSE_NON_PROBLEM_STATES,
-    EVSE_STATE_ERROR,
-    EVSE_STATES,
 )
 from .entity import VoltieChargerEntity, VoltieChargerRfidEntity
 
@@ -29,7 +27,6 @@ from .entity import VoltieChargerEntity, VoltieChargerRfidEntity
 @dataclass(frozen=True, kw_only=True)
 class VoltieBinarySensorDescription(BinarySensorEntityDescription):
     value_fn: Callable[[dict[str, Any]], bool | None]
-    attributes_fn: Callable[[dict[str, Any]], dict[str, Any] | None] | None = None
 
 
 def _status(data: dict[str, Any]) -> dict[str, Any]:
@@ -57,28 +54,14 @@ def _problem(data: dict[str, Any]) -> bool | None:
     return code not in EVSE_NON_PROBLEM_STATES
 
 
-def _problem_attributes(data: dict[str, Any]) -> dict[str, Any]:
-    code = _evse_code(data)
-    return {
-        # The evse_state option, so it shares that sensor's translations.
-        "error": (
-            EVSE_STATES.get(code, EVSE_STATE_ERROR)
-            if code is not None and code not in EVSE_NON_PROBLEM_STATES
-            else None
-        ),
-        "raw_code": code,
-    }
-
-
 BINARY_SENSORS: tuple[VoltieBinarySensorDescription, ...] = (
     # The one entity to automate on for faults; evse_state has the detail but
-    # needs a condition per code.
+    # needs a condition per code. Named after its device class, as is
+    # is_charging.
     VoltieBinarySensorDescription(
         key="problem",
-        translation_key="problem",
         device_class=BinarySensorDeviceClass.PROBLEM,
         value_fn=_problem,
-        attributes_fn=_problem_attributes,
     ),
     VoltieBinarySensorDescription(
         key="car_connected",
@@ -88,7 +71,6 @@ BINARY_SENSORS: tuple[VoltieBinarySensorDescription, ...] = (
     ),
     VoltieBinarySensorDescription(
         key="is_charging",
-        translation_key="is_charging",
         device_class=BinarySensorDeviceClass.BATTERY_CHARGING,
         value_fn=lambda d: _status(d).get("is_charging"),
     ),
@@ -162,13 +144,6 @@ class VoltieChargerBinarySensor(VoltieChargerEntity, BinarySensorEntity):
     def is_on(self) -> bool | None:
         value = self.entity_description.value_fn(self.coordinator.data or {})
         return bool(value) if value is not None else None
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any] | None:
-        fn = self.entity_description.attributes_fn
-        if fn is None:
-            return None
-        return fn(self.coordinator.data or {})
 
 
 class VoltieChargerRfidBinarySensor(VoltieChargerRfidEntity, BinarySensorEntity):
